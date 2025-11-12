@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  connector-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: edc-connector-ui:latest
+    container_name: edc-connector-ui
+    ports:
+      - "8082:80"
+    environment:
+      # Configure the EDC Management API URL
+      # Change this to point to your actual EDC connector management API
+      - API_URL=http://localhost:18181/management
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
