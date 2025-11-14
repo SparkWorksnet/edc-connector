@@ -40,27 +40,21 @@ dependencies {
     // ========================================
     // SQL Store Extensions
     // ========================================
-    implementation("org.eclipse.edc:sql-core:0.14.1")
-    implementation("org.eclipse.edc:sql-pool-apache-commons:0.14.1")
-    implementation("org.eclipse.edc:transaction-local:0.14.1")
-
+    implementation(libs.edc.sql.core)
+    implementation(libs.edc.sql.pool.apache.commons)
+    implementation(libs.edc.transaction.local)
     // Asset store
-    implementation("org.eclipse.edc:asset-index-sql:0.14.1")
-
+    implementation(libs.edc.asset.index.sql)
     // Contract definition store
-    implementation("org.eclipse.edc:contract-definition-store-sql:0.14.1")
-
+    implementation(libs.edc.contract.definition.store.sql)
     // Contract negotiation store
-    implementation("org.eclipse.edc:contract-negotiation-store-sql:0.14.1")
-
+    implementation(libs.edc.contract.negotiation.store.sql)
     // Transfer process store
-    implementation("org.eclipse.edc:transfer-process-store-sql:0.14.1")
-
+    implementation(libs.edc.transfer.process.store.sql)
     // Policy store
-    implementation("org.eclipse.edc:policy-definition-store-sql:0.14.1")
-
+    implementation(libs.edc.policy.definition.store.sql)
     // Policy monitor store (optional)
-    implementation("org.eclipse.edc:policy-monitor-store-sql:0.14.1")
+    implementation(libs.edc.policy.monitor.store.sql)
 
     // ========================================
     // MariaDB JDBC Driver
