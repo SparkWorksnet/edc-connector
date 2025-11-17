@@ -14,6 +14,9 @@ dependencyResolutionManagement {
     }
 }
 include(":edc:extensions:transfer-recovery")
-include(":edc:extensions:http-streaming-datasource")
+include(":edc:extensions:local-files-datasource")
+include(":edc:extensions:minio-files-datasource")
+include(":edc:extensions:piveau-data-sink")
 include(":edc:extensions:http-data-sink")
 include(":edc:connectors:ac3-uc1")
+include(":edc:connectors:dali-testbed-connector")

@@ -8,6 +8,8 @@ dependencies {
     // Common extensions module
     implementation(project(":edc:extensions:transfer-recovery"))
     implementation(project(":edc:extensions:local-files-datasource"))
+    implementation(project(":edc:extensions:minio-files-datasource"))
+    implementation(project(":edc:extensions:piveau-data-sink"))
 
     implementation(libs.edc.runtime.core)
     implementation(libs.edc.connector.core)

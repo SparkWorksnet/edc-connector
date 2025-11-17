@@ -16,6 +16,7 @@ import java.util.concurrent.ExecutorService;
 
 /**
  * Custom HTTP Data Sink that adds the file path as a custom header
+ * and supports Bearer token authentication.
  */
 public class CustomHttpDataSinkWithPartName implements DataSink {
     
@@ -23,12 +24,19 @@ public class CustomHttpDataSinkWithPartName implements DataSink {
     private final HttpDataAddress destinationAddress;
     private final Monitor monitor;
     private final ExecutorService executorService;
-    
+    private final String authKey;
+
     public CustomHttpDataSinkWithPartName(EdcHttpClient httpClient, HttpDataAddress destinationAddress, Monitor monitor, ExecutorService executorService) {
         this.httpClient = httpClient;
         this.destinationAddress = destinationAddress;
         this.monitor = monitor;
         this.executorService = executorService;
+
+        // Extract auth token from destination address properties
+        this.authKey = destinationAddress.getAuthKey();
+        if (authKey != null && !authKey.isEmpty()) {
+            monitor.info("Auth token configured for HTTP data sink");
+        }
     }
     
     @Override
@@ -62,12 +70,23 @@ public class CustomHttpDataSinkWithPartName implements DataSink {
                         
                         // Create request body with file content
                         var requestBody = RequestBody.create(fileContent, MediaType.parse("application/octet-stream"));
-                        
+
                         // Build HTTP request with custom headers
-                        var httpRequest = new Request.Builder().url(destinationAddress.getBaseUrl()).post(requestBody).header("X-File-Path", filePath)                    // ← YOUR CUSTOM HEADER
-                                .header("X-File-Name", extractFileName(filePath))   // ← OPTIONAL: just filename
-                                .header("Content-Type", "application/octet-stream").build();
-                        
+                        var requestBuilder = new Request.Builder()
+                                .url(destinationAddress.getBaseUrl())
+                                .post(requestBody)
+                                .header("X-File-Path", filePath)
+                                .header("X-File-Name", extractFileName(filePath))
+                                .header("Content-Type", "application/octet-stream");
+
+                        // Add Authorization header if auth token is configured
+                        if (authKey != null && !authKey.isEmpty()) {
+                            requestBuilder.header("Authorization", "Bearer " + authKey);
+                            monitor.debug("Adding Authorization header to request");
+                        }
+
+                        var httpRequest = requestBuilder.build();
+
                         monitor.info("Sending HTTP POST to: " + destinationAddress.getBaseUrl());
                         
                         // Execute the HTTP request
