@@ -143,13 +143,14 @@ public class MinioFilesDataSource implements DataSource, Closeable {
      * Spliterator that polls MinIO bucket for new objects
      */
     private static class MinioObjectSpliterator extends Spliterators.AbstractSpliterator<Item> {
-        
+
         private final MinioClient minioClient;
         private final String bucketName;
         private final String prefix;
         private final Monitor monitor;
         private final Map<String, Item> seenObjects = new HashMap<>();
-        
+        private boolean initialized = false;
+
         MinioObjectSpliterator(MinioClient minioClient, String bucketName, String prefix, Monitor monitor) {
             super(Long.MAX_VALUE, Spliterator.ORDERED);
             this.minioClient = minioClient;
@@ -157,10 +158,57 @@ public class MinioFilesDataSource implements DataSource, Closeable {
             this.prefix = prefix;
             this.monitor = monitor;
         }
+
+        /**
+         * Initialize by loading all existing objects into seenObjects map
+         * to avoid triggering events for files that already exist.
+         */
+        private void initialize() {
+            if (initialized) {
+                return;
+            }
+
+            try {
+                monitor.info("Initializing MinIO data source - loading existing objects to avoid duplicate events");
+
+                Iterable<Result<Item>> results = minioClient.listObjects(
+                    ListObjectsArgs.builder()
+                        .bucket(bucketName)
+                        .prefix(prefix)
+                        .recursive(true)
+                        .build()
+                );
+
+                int count = 0;
+                for (Result<Item> result : results) {
+                    Item item = result.get();
+                    String objectName = item.objectName();
+
+                    // Skip directory markers
+                    if (objectName.endsWith("/")) {
+                        continue;
+                    }
+
+                    seenObjects.put(objectName, item);
+                    count++;
+                }
+
+                monitor.info("Initialized with " + count + " existing objects - these will not trigger events");
+                initialized = true;
+
+            } catch (Exception e) {
+                monitor.warning("Failed to initialize MinIO data source, will treat all files as new: " + e.getMessage());
+                // Mark as initialized anyway to avoid repeated attempts
+                initialized = true;
+            }
+        }
         
         @Override
         public boolean tryAdvance(Consumer<? super Item> action) {
             try {
+                // Initialize on first call to load existing objects
+                initialize();
+
                 // List objects in bucket
                 Iterable<Result<Item>> results = minioClient.listObjects(ListObjectsArgs.builder().bucket(bucketName).prefix(prefix).recursive(true).build());
                 
