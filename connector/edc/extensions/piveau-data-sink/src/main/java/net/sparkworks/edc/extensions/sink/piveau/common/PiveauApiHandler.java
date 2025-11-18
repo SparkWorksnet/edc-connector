@@ -65,14 +65,14 @@ public class PiveauApiHandler {
      * @param jsonContent the content of the JSON file with dataset metadata
      * @throws IOException if parsing or API call fails
      */
-    public void handleJsonFile(Path filePath, String jsonContent) throws IOException {
+    public String handleJsonFile(final String datasetId, final String filename, Path filePath, String jsonContent) throws IOException {
         monitor.info("Processing dataset metadata from: " + filePath.getFileName());
         
         // Parse JSON input into DatasetMetadata object
         DatasetMetadata metadata = objectMapper.readValue(jsonContent, DatasetMetadata.class);
         
         // Validate required fields
-        if (metadata.getDatasetId() == null || metadata.getDatasetId().isEmpty()) {
+        if (datasetId == null || datasetId.isEmpty()) {
             throw new IOException("Dataset ID is required in JSON metadata");
         }
         
@@ -85,12 +85,14 @@ public class PiveauApiHandler {
         String keywords = formatKeywords(metadata.getKeywords());
         
         // Build DCAT-AP Turtle body
-        String turtleBody = buildDcatTurtle(metadata.getDatasetId(), metadata.getTitle(), metadata.getDescription(), issuedDate, modifiedDate, metadata.getTheme(), keywords, metadata.getLicense());
+        String turtleBody = buildDcatTurtle(datasetId, metadata.getTitle(), metadata.getDescription(), issuedDate, modifiedDate, metadata.getTheme(), keywords, metadata.getLicense());
+        
+        monitor.info(turtleBody);
         
         monitor.debug("Generated DCAT-AP Turtle:\n" + turtleBody);
         
         // Build the URL with catalogue query parameter if provided
-        String url = apiUrl + "/" + metadata.getDatasetId() + "?catalogue=" + this.catalogueId;
+        String url = apiUrl + "/" + datasetId + "?catalogue=" + this.catalogueId;
         
         // Build the HTTP request
         RequestBody requestBody = RequestBody.create(turtleBody, TURTLE);
@@ -104,7 +106,7 @@ public class PiveauApiHandler {
         Request request = requestBuilder.build();
         
         monitor.info("Sending DCAT-AP dataset to Piveau Hub Repo: " + apiUrl);
-        monitor.info("  Dataset ID: " + metadata.getDatasetId());
+        monitor.info("  Dataset ID: " + datasetId);
         
         // Execute the request
         try (Response response = httpClient.newCall(request).execute()) {
@@ -115,6 +117,7 @@ public class PiveauApiHandler {
                 if (!responseBody.isEmpty()) {
                     monitor.debug("  Response body: " + responseBody);
                 }
+                return datasetId;
             } else {
                 String errorBody = response.body() != null ? response.body().string() : "No error details";
                 String errorMessage = String.format("Failed to register dataset in Piveau Hub (HTTP %d): %s", response.code(), errorBody);
@@ -223,5 +226,186 @@ public class PiveauApiHandler {
             monitor.warning("⚠ Failed to connect to Piveau Hub Repo API: " + e.getMessage());
             return false;
         }
+    }
+    
+    /**
+     * Create a distribution for a file in an existing Piveau dataset.
+     * The distribution represents the actual data file (CSV, etc.) associated with the dataset.
+     *
+     * @param datasetId  the ID of the dataset (from dirName)
+     * @param fileName   the name of the file being uploaded
+     * @return the distribution ID
+     * @throws IOException if the API call fails
+     */
+    public String createDistribution(String datasetId, String fileName) throws IOException {
+        if (datasetId == null || datasetId.isEmpty()) {
+            throw new IOException("Dataset ID is required to create distribution");
+        }
+
+        if (fileName == null || fileName.isEmpty()) {
+            throw new IOException("File name is required to create distribution");
+        }
+
+        monitor.info("Creating distribution for dataset: " + datasetId);
+        monitor.info("  File: " + fileName);
+
+        // Generate distribution ID from filename (remove extension and sanitize)
+        String distributionId = generateDistributionId(fileName);
+
+        // Get current date for issued/modified
+        String currentDate = LocalDate.now().format(DateTimeFormatter.ISO_DATE);
+
+        // Detect format and media type from file extension
+        String format = detectFormat(fileName);
+        String mediaType = detectMediaType(fileName);
+
+        // Build DCAT-AP Turtle body for the distribution
+        String turtleBody = buildDistributionTurtle(datasetId, distributionId, fileName, format, mediaType, currentDate);
+
+        monitor.info("Generated Distribution Turtle:\n" + turtleBody);
+
+        // Build the URL for distribution creation
+        String url = apiUrl + "/" + datasetId + "/distributions";
+
+        // Build the HTTP request
+        RequestBody requestBody = RequestBody.create(turtleBody, TURTLE);
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(url)
+                .post(requestBody)
+                .header("Content-Type", "text/turtle")
+                .header("Accept", "application/json");
+
+        // Add API key if configured
+        if (apiKey != null && !apiKey.isEmpty()) {
+            requestBuilder.header("X-API-Key", apiKey);
+        }
+
+        Request request = requestBuilder.build();
+
+        monitor.info("Sending distribution to Piveau Hub Repo: " + url);
+
+        // Execute the request
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                String responseBody = response.body() != null ? response.body().string() : "";
+                monitor.info("✓ Distribution created successfully in Piveau Hub");
+                monitor.info("  Response code: " + response.code());
+                monitor.info("  Distribution ID: " + distributionId);
+                if (!responseBody.isEmpty()) {
+                    monitor.debug("  Response body: " + responseBody);
+                }
+                return distributionId;
+            } else {
+                String errorBody = response.body() != null ? response.body().string() : "No error details";
+                String errorMessage = String.format(
+                        "Failed to create distribution in Piveau Hub (HTTP %d): %s",
+                        response.code(),
+                        errorBody
+                );
+                monitor.severe("✗ " + errorMessage);
+                throw new IOException(errorMessage);
+            }
+        } catch (IOException e) {
+            monitor.severe("✗ Failed to communicate with Piveau Hub Repo API", e);
+            throw e;
+        }
+    }
+
+    /**
+     * Build DCAT-AP Turtle representation of a distribution.
+     */
+    private String buildDistributionTurtle(String datasetId, String distributionId,
+                                          String fileName, String format,
+                                          String mediaType, String issuedDate) {
+        StringBuilder turtle = new StringBuilder();
+
+        // Add prefixes
+        turtle.append("@prefix dcat:   <http://www.w3.org/ns/dcat#> .\n");
+        turtle.append("@prefix dct:    <http://purl.org/dc/terms/> .\n");
+        turtle.append("@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .\n\n");
+
+        // Build distribution URI
+        String distributionUri = apiUrl + "/" + datasetId + "/distributions/" + distributionId;
+
+        // Add distribution definition
+        turtle.append("<").append(distributionUri).append(">\n");
+        turtle.append("    a                       dcat:Distribution ;\n");
+        turtle.append("    dct:title               \"").append(escapeString(fileName)).append("\"@en ;\n");
+        turtle.append("    dct:description         \"Data distribution for ").append(escapeString(fileName)).append("\"@en ;\n");
+        turtle.append("    dcat:accessURL          <").append(distributionUri).append("> ;\n");
+        turtle.append("    dct:format              \"").append(format).append("\" ;\n");
+        turtle.append("    dcat:mediaType          \"").append(mediaType).append("\" ;\n");
+        turtle.append("    dct:issued              \"").append(issuedDate).append("\"^^xsd:date ;\n");
+        turtle.append("    dct:modified            \"").append(issuedDate).append("\"^^xsd:date .\n");
+
+        return turtle.toString();
+    }
+
+    /**
+     * Generate a distribution ID from a filename.
+     * Removes file extension and sanitizes the name.
+     */
+    private String generateDistributionId(String fileName) {
+        // Remove file extension
+        int lastDot = fileName.lastIndexOf('.');
+        String baseName = lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
+
+        // Sanitize: replace non-alphanumeric characters with hyphens
+        return baseName.toLowerCase()
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("^-+|-+$", ""); // Remove leading/trailing hyphens
+    }
+
+    /**
+     * Detect format from file extension.
+     */
+    private String detectFormat(String fileName) {
+        String extension = getFileExtension(fileName).toLowerCase();
+        switch (extension) {
+            case "csv":
+                return "CSV";
+            case "json":
+                return "JSON";
+            case "xml":
+                return "XML";
+            case "xlsx":
+            case "xls":
+                return "XLSX";
+            case "pdf":
+                return "PDF";
+            default:
+                return extension.toUpperCase();
+        }
+    }
+
+    /**
+     * Detect media type from file extension.
+     */
+    private String detectMediaType(String fileName) {
+        String extension = getFileExtension(fileName).toLowerCase();
+        switch (extension) {
+            case "csv":
+                return "text/csv";
+            case "json":
+                return "application/json";
+            case "xml":
+                return "application/xml";
+            case "xlsx":
+                return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case "xls":
+                return "application/vnd.ms-excel";
+            case "pdf":
+                return "application/pdf";
+            default:
+                return "application/octet-stream";
+        }
+    }
+
+    /**
+     * Get file extension from filename.
+     */
+    private String getFileExtension(String fileName) {
+        int lastDot = fileName.lastIndexOf('.');
+        return lastDot > 0 ? fileName.substring(lastDot + 1) : "";
     }
 }

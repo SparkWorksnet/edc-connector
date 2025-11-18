@@ -48,11 +48,7 @@ public class PiveauDataSink implements DataSink {
         this.httpClient = httpClient;
         this.monitor = monitor;
         this.destinationAddress = destinationAddress;
-        this.piveauApiHandler = new PiveauApiHandler(
-                destinationAddress.getStringProperty("piveauUrl"),
-                destinationAddress.getStringProperty("piveauApiKey"),
-                destinationAddress.getStringProperty("piveauCatalogue"),
-                monitor);
+        this.piveauApiHandler = new PiveauApiHandler(destinationAddress.getStringProperty("piveauUrl"), destinationAddress.getStringProperty("piveauApiKey"), destinationAddress.getStringProperty("piveauCatalogue"), monitor);
         this.executorService = executorService;
         
         // Extract auth token from destination address properties
@@ -105,8 +101,10 @@ public class PiveauDataSink implements DataSink {
      * Handle JSON file - register to Piveau Hub Repo API
      */
     private void handleJsonFile(DataSource.Part part) {
+        String dirName = extractDirName(part.name());
         String fileName = extractFileName(part.name());
         monitor.info("════════════════════════════════════════════════");
+        monitor.info("Part Name: " + part.name());
         monitor.info("JSON file detected: " + fileName);
         monitor.info("Registering dataset to Piveau Hub Repo API");
         monitor.info("File will NOT be forwarded to downstream");
@@ -121,8 +119,8 @@ public class PiveauDataSink implements DataSink {
             
             // Register to Piveau Hub Repo
             if (piveauApiHandler != null) {
-                piveauApiHandler.handleJsonFile(Path.of(fileName), jsonContent);
-                monitor.info("✓ Dataset registered to Piveau Hub Repo: " + fileName);
+                String datasetId = piveauApiHandler.handleJsonFile(dirName, fileName, Path.of(fileName), jsonContent);
+                monitor.info("✓ Dataset registered to Piveau Hub Repo: " + datasetId);
             } else {
                 monitor.warning("⚠ Piveau API handler is not configured, skipping registration");
             }
@@ -133,8 +131,10 @@ public class PiveauDataSink implements DataSink {
     }
     
     private void handleCsvFile(DataSource.Part part) {
+        String dirName = extractDirName(part.name());
         String fileName = extractFileName(part.name());
         monitor.info("════════════════════════════════════════════════");
+        monitor.info("Part Name: " + part.name());
         monitor.info("CSV file detected: " + fileName);
         monitor.info("Registering dataset to Data Lake");
         monitor.info("════════════════════════════════════════════════");
@@ -146,11 +146,27 @@ public class PiveauDataSink implements DataSink {
             String jsonContent;
             try (var inputStream = part.openStream()) {
                 byte[] fileContent = inputStream.readAllBytes();
-                
+
+                // Create distribution in Piveau for this file
+                if (piveauApiHandler != null && dirName != null) {
+                    try {
+                        String distributionId = piveauApiHandler.createDistribution(dirName, fileName);
+                        monitor.info("✓ Distribution created in Piveau: " + distributionId);
+                    } catch (IOException e) {
+                        monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
+                        // Continue with file upload even if distribution creation fails
+                    }
+                } else {
+                    monitor.warning("⚠ Piveau API handler not configured or dataset ID not available, skipping distribution creation");
+                }
+
                 var requestBody = RequestBody.create(fileContent, MediaType.parse("application/octet-stream"));
                 
                 // Build HTTP request with custom headers
-                var requestBuilder = new Request.Builder().url(destinationAddress.getBaseUrl()).post(requestBody).header("X-File-Path", filePath).header("X-File-Name", extractFileName(filePath)).header("Content-Type", "application/octet-stream");
+                var requestBuilder = new Request.Builder().url(destinationAddress.getBaseUrl()).post(requestBody)
+                        .header("X-File-Path", dirName) //the dire to store the file
+                        .header("X-File-Name", fileName) //the name of the file
+                        .header("Content-Type", "application/octet-stream");
                 
                 // Add Authorization header if auth token is configured
                 if (authKey != null && !authKey.isEmpty()) {
@@ -186,5 +202,20 @@ public class PiveauDataSink implements DataSink {
         }
         int lastSlash = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
         return lastSlash >= 0 ? fullPath.substring(lastSlash + 1) : fullPath;
+    }
+    
+    /**
+     * Extract dirname from full path
+     */
+    private String extractDirName(String fullPath) {
+        if (fullPath == null) {
+            return null;
+        }
+        final String[] parts = fullPath.split("/");
+        if (parts.length > 1) {
+            return parts[parts.length - 2];
+        } else {
+            return null;
+        }
     }
 }
