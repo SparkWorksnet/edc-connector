@@ -13,27 +13,48 @@
         body {
             background: #f8f9fa;
         }
+
         .status-badge {
             font-size: 0.75rem;
             font-weight: 600;
             padding: 0.35rem 0.65rem;
         }
+
+        .terminated {
+            background: black;
+        }
+
+        .deprovisioned {
+            background: orange;
+        }
+        .started {
+            background: green;
+        }
+
+        .finalized {
+            background: green;
+        }
+
         .status-completed, .status-finalized {
             background: #d4edda;
             color: #155724;
         }
+
         .status-started, .status-streaming {
             background: #cce5ff;
             color: #004085;
         }
+
         .status-failed, .status-terminated {
             background: #f8d7da;
             color: #721c24;
         }
+
         .count-badge {
             background: #e9ecef;
             color: #495057;
         }
+
         .table-responsive {
             border-radius: 0.375rem;
         }
@@ -273,7 +294,7 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+                    "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
                     "@type": "QuerySpec"
                 })
             });
@@ -284,7 +305,7 @@
 
             return await response.json();
         } catch (error) {
-            return { error: error.message };
+            return {error: error.message};
         }
     }
 
@@ -414,7 +435,7 @@
                     <td><span class="badge status-badge ${stateClass}">${neg.state}</span></td>
                     <td><span class="badge bg-secondary">${neg.type}</span></td>
                     <td><small class="text-muted">${neg.counterPartyAddress || 'N/A'}</small></td>
-                    <td><small class="text-muted">${new Date(neg.createdAt).toLocaleString()}</small></td>
+                    <td><small class="text-muted">${neg.createdAt} ${new Date(neg.createdAt).toLocaleString()}</small></td>
                 </tr>`;
         });
         html += '</tbody></table></div>';
@@ -444,12 +465,13 @@
         let html = '<div class="table-responsive"><table class="table table-hover"><thead class="table-light"><tr><th>ID</th><th>State</th><th>Type</th><th>Asset</th><th>Created</th></tr></thead><tbody>';
         data.forEach(transfer => {
             const stateClass = transfer.state?.toLowerCase();
+            console.log(transfer);
             html += `<tr>
                     <td><code class="text-primary">${transfer['@id']}</code></td>
                     <td><span class="badge status-badge ${stateClass}">${transfer.state}</span></td>
                     <td><span class="badge bg-secondary">${transfer.type}</span></td>
                     <td><code>${transfer.assetId || '<span class="text-muted">N/A</span>'}</code></td>
-                    <td><small class="text-muted">${new Date(transfer.createdAt).toLocaleString()}</small></td>
+                    <td><small class="text-muted">${new Date(transfer.stateTimestamp).toLocaleString()}</small></td>
                 </tr>`;
         });
         html += '</tbody></table></div>';
@@ -497,7 +519,7 @@
     }
 
     // Initialize on page load
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         loadAll();
     });
 </script>
