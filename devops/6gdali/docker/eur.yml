@@ -1,0 +1,84 @@
+services:
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: edc_provider
+      POSTGRES_USER: edc_user
+      POSTGRES_PASSWORD: edc_password
+    volumes:
+      - EUR_PROVIDER_DB_DATA:/var/lib/postgresql/data
+    networks:
+      - eur-dali-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U edc_user -d edc_provider" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1"
+        max-size: "5m"
+
+  provider:
+    image: ghcr.io/sparkworksnet/6gdali-testbed-connector:latest
+    restart: always
+    depends_on:
+      - db
+    ports:
+      - "18190:18190"
+      - "18191:18191"
+      - "18192:18192"
+      - "18193:18193"
+    configs:
+      - source: eur_connector_config
+        target: /usr/src/app/connector.properties
+    volumes:
+      - EUR_PROVIDER_DATA:/usr/src/app/data
+    networks:
+      - eur-dali-net
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1"
+        max-size: "10m"
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: any
+      placement:
+        constraints:
+          - node.labels.data_new == true
+
+  ui:
+    image: ghcr.io/sparkworksnet/connector-ui:latest
+    restart: always
+    depends_on:
+      - provider
+    ports:
+      - "18194:80"
+    environment:
+      - API_URL=http://provider:18191/management
+    networks:
+      - eur-dali-net
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1"
+        max-size: "1m"
+
+configs:
+  eur_connector_config:
+    external: true
+
+networks:
+  eur-dali-net:
+    external: true
+
+volumes:
+  EUR_PROVIDER_DB_DATA:
+    external: true
+  EUR_PROVIDER_DATA:
+    external: true
