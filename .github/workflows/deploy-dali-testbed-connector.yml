@@ -36,7 +36,7 @@ jobs:
 
       - name: Build JAR with Gradle
         working-directory: connector
-        run: ./gradlew :edc:connectors:dali-testbed-connector:shadowJar --no-daemon
+        run: ./gradlew :edc:assemble --no-daemon
 
       - name: Verify JAR exists
         working-directory: connector/edc/connectors/dali-testbed-connector
