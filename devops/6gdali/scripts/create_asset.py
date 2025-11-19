@@ -17,11 +17,11 @@ except ImportError:
     print("Install with: pip install python-dotenv")
 
 # Provider configuration
-PROVIDER_DOMAIN = os.getenv('PROVIDER_DOMAIN', 'http://eur.testbeds')
-PROVIDER_HTTP_PORT = int(os.getenv('PROVIDER_HTTP_PORT', '18190'))
-PROVIDER_HTTP_MANAGEMENT_PORT = int(os.getenv('PROVIDER_HTTP_MANAGEMENT_PORT', '18191'))
-PROVIDER_HTTP_PROTOCOL_PORT = int(os.getenv('PROVIDER_HTTP_PROTOCOL_PORT', '18192'))
-PROVIDER_HTTP_CONTROL_PORT = int(os.getenv('PROVIDER_HTTP_CONTROL_PORT', '18193'))
+PROVIDER_DOMAIN = os.getenv('PROVIDER_DOMAIN')
+PROVIDER_HTTP_PORT = int(os.getenv('PROVIDER_HTTP_PORT'))
+PROVIDER_HTTP_MANAGEMENT_PORT = int(os.getenv('PROVIDER_HTTP_MANAGEMENT_PORT'))
+PROVIDER_HTTP_PROTOCOL_PORT = int(os.getenv('PROVIDER_HTTP_PROTOCOL_PORT'))
+PROVIDER_HTTP_CONTROL_PORT = int(os.getenv('PROVIDER_HTTP_CONTROL_PORT'))
 
 provider_helper = provider.ProviderHelper(
     provider_base_url=PROVIDER_DOMAIN,
@@ -32,11 +32,11 @@ provider_helper = provider.ProviderHelper(
 )
 
 # Asset configuration
-asset_name = os.getenv('ASSET_NAME', 'eur-experiments-minio-2')
+asset_name = os.getenv('ASSET_NAME')
 
 data_address = {
     "type": "MinioFiles",
-    "endpoint": os.getenv('MINIO_ENDPOINT', 'http://minio:9000'),
+    "endpoint": os.getenv('MINIO_ENDPOINT'),
     "bucketName": os.getenv('MINIO_BUCKET_NAME'),
     "accessKey": os.getenv('MINIO_ACCESS_KEY'),
     "secretKey": os.getenv('MINIO_SECRET_KEY'),
