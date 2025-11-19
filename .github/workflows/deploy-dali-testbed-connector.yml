@@ -30,14 +30,6 @@ jobs:
           gradle-version: wrapper
           gradle-home-cache-cleanup: true
 
-      - name: Validate Gradle Wrapper
-        working-directory: connector
-        run: |
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "Gradle wrapper JAR missing, generating wrapper..."
-            gradle wrapper --gradle-version 8.5
-          fi
-
       - name: Make gradlew executable
         working-directory: connector
         run: chmod +x ./gradlew
