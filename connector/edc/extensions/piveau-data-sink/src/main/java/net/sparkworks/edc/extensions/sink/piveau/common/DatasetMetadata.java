@@ -51,8 +51,6 @@ public class DatasetMetadata {
     
     private String modified;
     
-    private String catalogue;
-    
     // from eur
     private String publisher;
     
