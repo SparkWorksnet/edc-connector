@@ -520,6 +520,11 @@
 
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
+        // Set API URL based on current hostname
+        const apiUrlInput = document.getElementById('apiUrl');
+        const defaultApiUrl = `${window.location.protocol}//${window.location.hostname}:${API_PORT}/management`;
+        apiUrlInput.value = defaultApiUrl;
+
         loadAll();
     });
 </script>

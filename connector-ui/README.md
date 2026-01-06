@@ -6,7 +6,8 @@ A lightweight web-based dashboard for monitoring and managing Eclipse Dataspace 
 
 - View Assets, Contract Definitions, Agreements, Negotiations, Transfers, and Policies
 - Real-time data refresh (auto-updates every 10 seconds)
-- Configurable API endpoint
+- Automatic API URL construction based on current hostname and configurable port
+- Manual API URL override available via input field
 - Responsive design
 - Single-page HTML application
 
@@ -19,13 +20,15 @@ A lightweight web-based dashboard for monitoring and managing Eclipse Dataspace 
 docker-compose up -d
 ```
 
-2. Access the dashboard at http://localhost:8080
+2. Access the dashboard at http://localhost:8082
 
-3. To use a different API URL, edit the `API_URL` environment variable in `docker-compose.yml`:
+3. To use a different API port, edit the `API_PORT` environment variable in `docker-compose.yml`:
 ```yaml
 environment:
-  - API_URL=http://your-edc-host:port/management
+  - API_PORT=9191
 ```
+
+The dashboard automatically constructs the Management API URL based on the current hostname and the configured port.
 
 ### Using Docker CLI
 
@@ -38,42 +41,55 @@ docker build -t edc-connector-ui .
 ```bash
 docker run -d \
   -p 8080:80 \
-  -e API_URL=http://localhost:18181/management \
+  -e API_PORT=18191 \
   --name edc-connector-ui \
   edc-connector-ui:latest
 ```
 
 3. Access the dashboard at http://localhost:8080
 
+The dashboard will automatically construct the API URL as `http://localhost:18191/management`.
+
 ## Configuration
 
 ### Environment Variables
 
-- `API_URL`: The URL of your EDC Management API (default: `http://localhost:18181/management`)
+- `API_PORT`: The port number of your EDC Management API (default: `18191`)
+
+The dashboard automatically constructs the Management API URL using:
+- Current page protocol (http/https)
+- Current page hostname
+- Configured API_PORT
+- Path suffix: `/management`
+
+**Result:** `{protocol}://{hostname}:{API_PORT}/management`
 
 ### Example Configurations
 
 **For local development:**
 ```bash
 docker run -d -p 8080:80 \
-  -e API_URL=http://localhost:18181/management \
+  -e API_PORT=18191 \
   edc-connector-ui
 ```
+The dashboard will connect to: `http://localhost:18191/management`
 
-**For remote EDC connector:**
+**For custom port:**
 ```bash
 docker run -d -p 8080:80 \
-  -e API_URL=https://edc.example.com/management \
+  -e API_PORT=9191 \
   edc-connector-ui
 ```
+The dashboard will connect to: `http://localhost:9191/management`
 
 **For Docker network (connector running in another container):**
 ```bash
 docker run -d -p 8080:80 \
-  -e API_URL=http://edc-connector:18181/management \
+  -e API_PORT=18191 \
   --network edc-network \
   edc-connector-ui
 ```
+Access the dashboard at http://localhost:8080 and manually update the API URL field if needed.
 
 ## Project Structure
 
@@ -117,15 +133,21 @@ This dashboard is compatible with EDC Management API v3 and uses the following e
 ## Troubleshooting
 
 **Dashboard shows "Error: Failed to fetch":**
-- Check that the API_URL is correct
-- Verify the EDC connector is running and accessible
+- Check that the API_PORT is configured correctly
+- Verify the EDC connector is running and accessible at the expected port
 - Check CORS settings on the EDC connector
 - Check browser console for detailed error messages
+- Manually verify the API URL in the dashboard input field
 
 **Container fails to start:**
-- Check that port 8080 is not already in use
+- Check that port 8080 (or 8082 for docker-compose) is not already in use
 - Verify Docker is running properly
 - Check container logs: `docker logs edc-connector-ui`
+
+**API URL is incorrect:**
+- The dashboard automatically constructs the API URL based on `window.location.hostname`
+- If accessing via Docker network or proxy, you may need to manually update the API URL field in the dashboard
+- You can always manually override the API URL using the input field at the top of the page
 
 ## License
 

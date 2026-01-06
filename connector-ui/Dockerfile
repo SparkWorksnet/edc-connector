@@ -14,8 +14,8 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 RUN dos2unix /entrypoint.sh
 
-# Set default API URL (can be overridden via environment variable)
-ENV API_URL=http://localhost:18181/management
+# Set default API port (can be overridden via environment variable)
+ENV API_PORT=18191
 
 # Expose port 80
 EXPOSE 80
