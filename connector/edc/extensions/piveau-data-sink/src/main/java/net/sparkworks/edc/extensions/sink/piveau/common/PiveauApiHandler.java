@@ -81,11 +81,8 @@ public class PiveauApiHandler {
         String issuedDate = metadata.getIssued() != null ? metadata.getIssued() : currentDate;
         String modifiedDate = metadata.getModified() != null ? metadata.getModified() : currentDate;
         
-        // Format keywords
-        String keywords = formatKeywords(metadata.getKeywords());
-        
         // Build DCAT-AP Turtle body
-        String turtleBody = buildDcatTurtle(datasetId, metadata.getTitle(), metadata.getDescription(), issuedDate, modifiedDate, metadata.getTheme(), keywords, metadata.getLicense());
+        String turtleBody = buildDcatTurtle(datasetId, metadata, issuedDate, modifiedDate);
         
         monitor.info(turtleBody);
         
@@ -133,9 +130,9 @@ public class PiveauApiHandler {
     /**
      * Build DCAT-AP Turtle representation of the dataset.
      */
-    private String buildDcatTurtle(String datasetId, String title, String description, String issuedDate, String modifiedDate, String theme, String keywords, String license) {
+    private String buildDcatTurtle(String datasetId, DatasetMetadata metadata, String issuedDate, String modifiedDate) {
         StringBuilder turtle = new StringBuilder();
-        
+
         // Add prefixes
         turtle.append("@prefix dcat:   <http://www.w3.org/ns/dcat#> .\n");
         turtle.append("@prefix dct:    <http://purl.org/dc/terms/> .\n");
@@ -146,27 +143,55 @@ public class PiveauApiHandler {
         turtle.append("@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .\n");
         turtle.append("@prefix prov:   <http://www.w3.org/ns/prov#> .\n");
         turtle.append("@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .\n\n");
-        
+
         // Build dataset URI
         String datasetUri = apiUrl + "/" + datasetId;
-        
+
         // Add dataset definition
         turtle.append("<").append(datasetUri).append(">\n");
         turtle.append("    a                       dcat:Dataset ;\n");
-        turtle.append("    dct:title               \"").append(escapeString(title)).append("\"@en ;\n");
-        turtle.append("    dct:description         \"").append(escapeString(description)).append("\"@en ;\n");
+        turtle.append("    dct:title               \"").append(escapeString(metadata.getTitle())).append("\"@en ;\n");
+        turtle.append("    dct:description         \"").append(escapeString(metadata.getDescription())).append("\"@en ;\n");
         turtle.append("    dct:issued              \"").append(issuedDate).append("\"^^xsd:date ;\n");
         turtle.append("    dct:modified            \"").append(modifiedDate).append("\"^^xsd:date ;\n");
-        turtle.append("    dcat:theme              <http://publications.europa.eu/resource/authority/data-theme/").append(theme).append("> ;\n");
-        
+        turtle.append("    dcat:theme              <http://publications.europa.eu/resource/authority/data-theme/").append(metadata.getTheme()).append("> ;\n");
+
         // Add keywords if present
+        String keywords = formatKeywords(metadata.getKeywords());
         if (keywords != null && !keywords.isEmpty()) {
             turtle.append("    dcat:keyword            ").append(keywords).append(" ;\n");
         }
-        
+
+        // Add columns (variable measured) if present
+        if (metadata.getColumns() != null && !metadata.getColumns().isEmpty()) {
+            turtle.append("    schema:variableMeasured ");
+            for (int i = 0; i < metadata.getColumns().size(); i++) {
+                if (i > 0) {
+                    turtle.append(", ");
+                }
+                turtle.append("\"").append(escapeString(metadata.getColumns().get(i))).append("\"");
+            }
+            turtle.append(" ;\n");
+        }
+
+        // Add publisher if present
+        if (metadata.getPublisher() != null && !metadata.getPublisher().isEmpty()) {
+            turtle.append("    dct:publisher           [ a foaf:Agent ; foaf:name \"").append(escapeString(metadata.getPublisher())).append("\" ] ;\n");
+        }
+
+//        // Add record count if present
+//        if (metadata.getRecordCount() != null && !metadata.getRecordCount().isEmpty()) {
+//            turtle.append("    schema:numberOfItems    \"").append(escapeString(metadata.getRecordCount())).append("\" ;\n");
+//        }
+
+//        // Add number of files if present
+//        if (metadata.getNumber_of_files() != null) {
+//            turtle.append("    schema:workExample      [ a schema:DataDownload ; schema:numberOfItems ").append(metadata.getNumber_of_files()).append(" ] ;\n");
+//        }
+
         // Add license (last line, no semicolon)
-        turtle.append("    dct:license             <").append(license).append("> .\n");
-        
+        turtle.append("    dct:license             <").append(metadata.getLicense()).append("> .\n");
+
         return turtle.toString();
     }
     

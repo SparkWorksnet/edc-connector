@@ -14,7 +14,12 @@
 
 package net.sparkworks.edc.extensions.sink.piveau.common;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,106 +27,60 @@ import java.util.List;
 /**
  * Represents dataset metadata from JSON input that will be transformed to DCAT-AP format.
  */
+@Getter
+@Setter
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class DatasetMetadata {
-
-    @JsonProperty("datasetId")
+    
     private String datasetId;
-
-    @JsonProperty("title")
+    
+    @Getter(AccessLevel.NONE)
     private String title;
-
-    @JsonProperty("description")
+    
+    @Getter(AccessLevel.NONE)
     private String description;
-
-    @JsonProperty("keywords")
+    
+    @Setter(AccessLevel.NONE)
     private List<String> keywords = new ArrayList<>();
-
-    @JsonProperty("theme")
+    
     private String theme = "TECH";
-
-    @JsonProperty("license")
+    
     private String license = "https://creativecommons.org/licenses/by/4.0/";
-
-    @JsonProperty("issued")
+    
     private String issued;
-
-    @JsonProperty("modified")
+    
     private String modified;
-
-    @JsonProperty("catalogue")
+    
     private String catalogue;
-
-    // Getters and setters
-
-    public String getDatasetId() {
-        return datasetId;
-    }
-
-    public void setDatasetId(String datasetId) {
-        this.datasetId = datasetId;
-    }
-
+    
+    // from eur
+    private String publisher;
+    
+    @JsonProperty("record_count")
+    @JsonAlias({"recordCount"})
+    private String recordCount;
+    
+    @JsonProperty("file_format")
+    @JsonAlias({"fileFormat"})
+    private String fileFormat;
+    
+    private List<String> columns;
+    
+    @JsonProperty("number_of_files")
+    @JsonAlias({"numberOfFiles"})
+    private Integer number_of_files;
+    
+    // Custom getters with logic
+    
     public String getTitle() {
         return title != null ? title : datasetId;
     }
-
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
+    
     public String getDescription() {
         return description != null ? description : getTitle();
     }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public List<String> getKeywords() {
-        return keywords;
-    }
-
+    
     public void setKeywords(List<String> keywords) {
         this.keywords = keywords != null ? keywords : new ArrayList<>();
-    }
-
-    public String getTheme() {
-        return theme;
-    }
-
-    public void setTheme(String theme) {
-        this.theme = theme;
-    }
-
-    public String getLicense() {
-        return license;
-    }
-
-    public void setLicense(String license) {
-        this.license = license;
-    }
-
-    public String getIssued() {
-        return issued;
-    }
-
-    public void setIssued(String issued) {
-        this.issued = issued;
-    }
-
-    public String getModified() {
-        return modified;
-    }
-
-    public void setModified(String modified) {
-        this.modified = modified;
-    }
-
-    public String getCatalogue() {
-        return catalogue;
-    }
-
-    public void setCatalogue(String catalogue) {
-        this.catalogue = catalogue;
     }
 }

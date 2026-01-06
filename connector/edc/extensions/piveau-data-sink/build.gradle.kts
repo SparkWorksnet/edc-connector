@@ -19,4 +19,8 @@ dependencies {
 
     // MinIO client for MinIO streaming data source
     implementation(libs.minio.io)
+
+    // Lombok for reducing boilerplate code
+    compileOnly(libs.lombok)
+    annotationProcessor(libs.lombok)
 }
