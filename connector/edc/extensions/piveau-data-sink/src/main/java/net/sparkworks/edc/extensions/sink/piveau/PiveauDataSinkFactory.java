@@ -71,33 +71,38 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
 
     @Override
     public DataSink createSink(DataFlowStartMessage request) {
-        monitor.info("Creating PiveauDataSink for request: " + request.getId());
+        try {
+            monitor.info("Creating PiveauDataSink for request: " + request.getId());
 
-        var dest = request.getDestinationDataAddress();
-        String endpoint   = dest.getStringProperty("endpoint");
-        String bucketName = dest.getStringProperty("bucketName");
-        String accessKey  = dest.getStringProperty("accessKey");
-        String secretKey  = dest.getStringProperty("secretKey");
-        String prefix     = dest.getStringProperty("prefix", "");
+            var dest = request.getDestinationDataAddress();
+            String endpoint   = dest.getStringProperty("endpoint");
+            String bucketName = dest.getStringProperty("bucketName");
+            String accessKey  = dest.getStringProperty("accessKey");
+            String secretKey  = dest.getStringProperty("secretKey");
+            String prefix     = dest.getStringProperty("prefix", "");
 
-        String piveauUrl       = dest.getStringProperty("piveauUrl");
-        String piveauApiKey    = dest.getStringProperty("piveauApiKey");
-        String piveauCatalogue = dest.getStringProperty("piveauCatalogue");
+            String piveauUrl       = dest.getStringProperty("piveauUrl");
+            String piveauApiKey    = dest.getStringProperty("piveauApiKey");
+            String piveauCatalogue = dest.getStringProperty("piveauCatalogue");
 
-        monitor.info("  MinIO endpoint: " + endpoint);
-        monitor.info("  MinIO bucket:   " + bucketName);
-        monitor.info("  MinIO prefix:   " + (prefix.isEmpty() ? "(root)" : prefix));
+            monitor.info("  MinIO endpoint: " + endpoint);
+            monitor.info("  MinIO bucket:   " + bucketName);
+            monitor.info("  MinIO prefix:   " + (prefix == null || prefix.isEmpty() ? "(root)" : prefix));
 
-        MinioClient minioClient = MinioClient.builder()
-            .endpoint(endpoint)
-            .credentials(accessKey, secretKey)
-            .build();
+            MinioClient minioClient = MinioClient.builder()
+                .endpoint(endpoint)
+                .credentials(accessKey, secretKey)
+                .build();
 
-        PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, monitor);
+            PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, monitor);
 
-        String httpDestinationUrl = dest.getStringProperty("baseUrl");
-        String authKey            = dest.getStringProperty("authKey");
+            String httpDestinationUrl = dest.getStringProperty("baseUrl");
+            String authKey            = dest.getStringProperty("authKey");
 
-        return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue, httpDestinationUrl, authKey);
+            return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue, httpDestinationUrl, authKey);
+        } catch (Exception e) {
+            monitor.severe("createSink failed for request " + request.getId() + ": " + e.getMessage(), e);
+            throw e;
+        }
     }
 }
