@@ -95,7 +95,7 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
 
         PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, monitor);
 
-        String httpDestinationUrl = dest.getStringProperty("httpDestinationUrl");
+        String httpDestinationUrl = dest.getStringProperty("baseUrl");
         String authKey            = dest.getStringProperty("authKey");
 
         return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue, httpDestinationUrl, authKey);
