@@ -14,6 +14,9 @@
 
 package net.sparkworks.edc.extensions.sink.piveau;
 
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -42,15 +45,20 @@ public class PiveauDataSink implements DataSink {
     private final Monitor monitor;
     private final PiveauApiHandler piveauApiHandler;
     private final ExecutorService executorService;
+    private final ConnectionFactory rabbitConnectionFactory;
+    private final String rabbitQueue;
 
     public PiveauDataSink(MinioClient minioClient, String bucketName, String prefix,
-                          PiveauApiHandler piveauApiHandler, Monitor monitor, ExecutorService executorService) {
+                          PiveauApiHandler piveauApiHandler, Monitor monitor, ExecutorService executorService,
+                          ConnectionFactory rabbitConnectionFactory, String rabbitQueue) {
         this.minioClient = minioClient;
         this.bucketName = bucketName;
         this.prefix = prefix != null ? prefix : "";
         this.piveauApiHandler = piveauApiHandler;
         this.monitor = monitor;
         this.executorService = executorService;
+        this.rabbitConnectionFactory = rabbitConnectionFactory;
+        this.rabbitQueue = rabbitQueue;
     }
     
     @Override
@@ -171,12 +179,30 @@ public class PiveauDataSink implements DataSink {
                 );
 
                 monitor.info("✓ Uploaded '" + objectKey + "' (" + fileContent.length + " bytes) to bucket '" + bucketName + "'");
+
+                sendRabbitNotification(objectKey, "SUCCESS");
             }
 
         } catch (IOException e) {
             monitor.severe("✗ Failed to process CSV file: " + fileName, e);
         } catch (Exception e) {
             monitor.severe("✗ MinIO upload failed for CSV file: " + fileName, e);
+        }
+    }
+
+    private void sendRabbitNotification(String requestId, String status) {
+        if (rabbitConnectionFactory == null || rabbitQueue == null || rabbitQueue.isEmpty()) {
+            monitor.warning("RabbitMQ not configured, skipping notification");
+            return;
+        }
+        try (Connection connection = rabbitConnectionFactory.newConnection();
+             Channel channel = connection.createChannel()) {
+            channel.queueDeclare(rabbitQueue, true, false, false, null);
+            String payload = "{\"request_id\": \"" + requestId + "\", \"status\": \"" + status + "\"}";
+            channel.basicPublish("", rabbitQueue, null, payload.getBytes());
+            monitor.info("✓ RabbitMQ notification sent to queue '" + rabbitQueue + "': " + payload);
+        } catch (Exception e) {
+            monitor.warning("⚠ Failed to send RabbitMQ notification: " + e.getMessage());
         }
     }
 

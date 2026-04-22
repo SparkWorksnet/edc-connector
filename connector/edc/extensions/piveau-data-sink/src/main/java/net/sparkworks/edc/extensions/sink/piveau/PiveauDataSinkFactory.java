@@ -14,7 +14,10 @@
 
 package net.sparkworks.edc.extensions.sink.piveau;
 
+import com.rabbitmq.client.ConnectionFactory;
 import io.minio.MinioClient;
+
+import java.net.URI;
 import net.sparkworks.edc.extensions.sink.piveau.common.PiveauApiHandler;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSink;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSinkFactory;
@@ -32,10 +35,15 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
 
     private final Monitor monitor;
     private final ExecutorService executorService;
+    private final ConnectionFactory rabbitConnectionFactory;
+    private final String rabbitQueue;
 
-    public PiveauDataSinkFactory(Monitor monitor, ExecutorService executorService) {
+    public PiveauDataSinkFactory(Monitor monitor, ExecutorService executorService,
+                                 ConnectionFactory rabbitConnectionFactory, String rabbitQueue) {
         this.monitor = monitor;
         this.executorService = executorService;
+        this.rabbitConnectionFactory = rabbitConnectionFactory;
+        this.rabbitQueue = rabbitQueue;
     }
 
     @Override
@@ -87,6 +95,6 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
 
         PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, monitor);
 
-        return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService);
+        return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue);
     }
 }

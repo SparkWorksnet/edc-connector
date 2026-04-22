@@ -18,6 +18,9 @@ dependencies {
     // MinIO client for MinIO streaming data source
     implementation(libs.minio.io)
 
+    // RabbitMQ client for post-transfer notifications
+    implementation(libs.rabbitmq.amqp.client)
+
     // Lombok for reducing boilerplate code
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
