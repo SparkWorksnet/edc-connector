@@ -14,17 +14,17 @@
 
 package net.sparkworks.edc.extensions.sink.piveau;
 
+import io.minio.BucketExistsArgs;
+import io.minio.MakeBucketArgs;
+import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
 import net.sparkworks.edc.extensions.sink.piveau.common.PiveauApiHandler;
-import okhttp3.MediaType;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import org.eclipse.edc.connector.dataplane.http.spi.HttpDataAddress;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSink;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSource;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult;
-import org.eclipse.edc.http.spi.EdcHttpClient;
 import org.eclipse.edc.spi.monitor.Monitor;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
@@ -33,29 +33,24 @@ import java.util.concurrent.ExecutorService;
 /**
  * Data sink that routes files based on extension:
  * - .json files: Register dataset to Piveau Hub Repo API (consume, don't forward)
- * - .csv files: Forward to configured HTTP endpoint
- * - Other files: Forward to configured HTTP endpoint (or ignore based on config)
+ * - .csv files: Upload to a MinIO / S3-compatible bucket
  */
 public class PiveauDataSink implements DataSink {
-    private final EdcHttpClient httpClient;
-    private final HttpDataAddress destinationAddress;
+    private final MinioClient minioClient;
+    private final String bucketName;
+    private final String prefix;
     private final Monitor monitor;
     private final PiveauApiHandler piveauApiHandler;
     private final ExecutorService executorService;
-    private final String authKey;
-    
-    public PiveauDataSink(EdcHttpClient httpClient, HttpDataAddress destinationAddress, Monitor monitor, ExecutorService executorService) {
-        this.httpClient = httpClient;
+
+    public PiveauDataSink(MinioClient minioClient, String bucketName, String prefix,
+                          PiveauApiHandler piveauApiHandler, Monitor monitor, ExecutorService executorService) {
+        this.minioClient = minioClient;
+        this.bucketName = bucketName;
+        this.prefix = prefix != null ? prefix : "";
+        this.piveauApiHandler = piveauApiHandler;
         this.monitor = monitor;
-        this.destinationAddress = destinationAddress;
-        this.piveauApiHandler = new PiveauApiHandler(destinationAddress.getStringProperty("piveauUrl"), destinationAddress.getStringProperty("piveauApiKey"), destinationAddress.getStringProperty("piveauCatalogue"), monitor);
         this.executorService = executorService;
-        
-        // Extract auth token from destination address properties
-        this.authKey = destinationAddress.getAuthKey();
-        if (authKey != null && !authKey.isEmpty()) {
-            monitor.info("Auth token configured for HTTP data sink");
-        }
     }
     
     @Override
@@ -136,14 +131,17 @@ public class PiveauDataSink implements DataSink {
         monitor.info("════════════════════════════════════════════════");
         monitor.info("Part Name: " + part.name());
         monitor.info("CSV file detected: " + fileName);
-        monitor.info("Registering dataset to Data Lake");
+        monitor.info("Registering dataset to Data Lake: "+ bucketName);
         monitor.info("════════════════════════════════════════════════");
-        
-        String filePath = part.name();
-        
+
         try {
-            // Read JSON content
-            String jsonContent;
+            // Ensure bucket exists
+            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
+            if (!exists) {
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+                monitor.info("Created bucket: " + bucketName);
+            }
+
             try (var inputStream = part.openStream()) {
                 byte[] fileContent = inputStream.readAllBytes();
 
@@ -154,43 +152,40 @@ public class PiveauDataSink implements DataSink {
                         monitor.info("✓ Distribution created in Piveau: " + distributionId);
                     } catch (IOException e) {
                         monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
-                        // Continue with file upload even if distribution creation fails
+                        // Continue with upload even if distribution creation fails
                     }
                 } else {
                     monitor.warning("⚠ Piveau API handler not configured or dataset ID not available, skipping distribution creation");
                 }
 
-                var requestBody = RequestBody.create(fileContent, MediaType.parse("application/octet-stream"));
-                
-                // Build HTTP request with custom headers
-                var requestBuilder = new Request.Builder().url(destinationAddress.getBaseUrl()).post(requestBody)
-                        .header("X-File-Path", dirName) //the dire to store the file
-                        .header("X-File-Name", fileName) //the name of the file
-                        .header("Content-Type", "application/octet-stream");
-                
-                // Add Authorization header if auth token is configured
-                if (authKey != null && !authKey.isEmpty()) {
-                    requestBuilder.header("Authorization", "Bearer " + authKey);
-                    monitor.debug("Adding Authorization header to request");
-                }
-                
-                var httpRequest = requestBuilder.build();
-                
-                monitor.info("Sending HTTP POST to: " + destinationAddress.getBaseUrl());
-                
-                // Execute the HTTP request
-                try (var response = httpClient.execute(httpRequest)) {
-                    if (response.isSuccessful()) {
-                        monitor.info("Successfully transferred file: " + filePath + " (status: " + response.code() + ")");
-                    } else {
-                        monitor.warning("Failed to transfer file: " + filePath + " (status: " + response.code() + ")");
-                    }
-                }
+                // Build the object key: optional prefix + original part path
+                String objectKey = buildObjectKey(part.name());
+
+                minioClient.putObject(
+                    PutObjectArgs.builder()
+                        .bucket(bucketName)
+                        .object(objectKey)
+                        .stream(new ByteArrayInputStream(fileContent), fileContent.length, -1)
+                        .contentType("application/octet-stream")
+                        .build()
+                );
+
+                monitor.info("✓ Uploaded '" + objectKey + "' (" + fileContent.length + " bytes) to bucket '" + bucketName + "'");
             }
-            
+
         } catch (IOException e) {
             monitor.severe("✗ Failed to process CSV file: " + fileName, e);
+        } catch (Exception e) {
+            monitor.severe("✗ MinIO upload failed for CSV file: " + fileName, e);
         }
+    }
+
+    private String buildObjectKey(String partName) {
+        if (prefix == null || prefix.isEmpty()) {
+            return partName;
+        }
+        String normalizedPrefix = prefix.endsWith("/") ? prefix : prefix + "/";
+        return normalizedPrefix + partName;
     }
     
     /**

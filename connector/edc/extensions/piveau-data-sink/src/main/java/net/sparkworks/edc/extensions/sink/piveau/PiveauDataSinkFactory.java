@@ -14,52 +14,79 @@
 
 package net.sparkworks.edc.extensions.sink.piveau;
 
+import io.minio.MinioClient;
 import net.sparkworks.edc.extensions.sink.piveau.common.PiveauApiHandler;
-import org.eclipse.edc.connector.dataplane.http.spi.HttpDataAddress;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSink;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSinkFactory;
-import org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult;
-import org.eclipse.edc.http.spi.EdcHttpClient;
 import org.eclipse.edc.spi.monitor.Monitor;
 import org.eclipse.edc.spi.result.Result;
 import org.eclipse.edc.spi.types.domain.transfer.DataFlowStartMessage;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
 /**
- * Factory for creating PiveauRoutingDataSink instances.
+ * Factory for creating PiveauDataSink instances.
  */
 public class PiveauDataSinkFactory implements DataSinkFactory {
-    
+
     private final Monitor monitor;
-    private final EdcHttpClient httpClient;
     private final ExecutorService executorService;
-    
-    public PiveauDataSinkFactory(Monitor monitor, EdcHttpClient httpClient, ExecutorService executorService) {
+
+    public PiveauDataSinkFactory(Monitor monitor, ExecutorService executorService) {
         this.monitor = monitor;
-        this.httpClient = httpClient;
         this.executorService = executorService;
     }
-    
+
     @Override
     public String supportedType() {
         return "PiveauData";
     }
-    
+
     @Override
     public @NotNull Result<Void> validateRequest(DataFlowStartMessage request) {
+        var dest = request.getDestinationDataAddress();
+        if (dest.getStringProperty("endpoint") == null) {
+            return Result.failure("MinIO endpoint is required in destination data address");
+        }
+        if (dest.getStringProperty("bucketName") == null) {
+            return Result.failure("MinIO bucketName is required in destination data address");
+        }
+        if (dest.getStringProperty("accessKey") == null) {
+            return Result.failure("MinIO accessKey is required in destination data address");
+        }
+        if (dest.getStringProperty("secretKey") == null) {
+            return Result.failure("MinIO secretKey is required in destination data address");
+        }
         return Result.success();
     }
-    
+
     @Override
     public DataSink createSink(DataFlowStartMessage request) {
         monitor.info("Creating PiveauDataSink for request: " + request.getId());
-        
-        var destinationAddress = HttpDataAddress.Builder.newInstance().copyFrom(request.getDestinationDataAddress()).build();
-        
-        // Create and return the routing sink
-        return new PiveauDataSink(httpClient, destinationAddress, monitor, executorService);
+
+        var dest = request.getDestinationDataAddress();
+        String endpoint   = dest.getStringProperty("endpoint");
+        String bucketName = dest.getStringProperty("bucketName");
+        String accessKey  = dest.getStringProperty("accessKey");
+        String secretKey  = dest.getStringProperty("secretKey");
+        String prefix     = dest.getStringProperty("prefix", "");
+
+        String piveauUrl       = dest.getStringProperty("piveauUrl");
+        String piveauApiKey    = dest.getStringProperty("piveauApiKey");
+        String piveauCatalogue = dest.getStringProperty("piveauCatalogue");
+
+        monitor.info("  MinIO endpoint: " + endpoint);
+        monitor.info("  MinIO bucket:   " + bucketName);
+        monitor.info("  MinIO prefix:   " + (prefix.isEmpty() ? "(root)" : prefix));
+
+        MinioClient minioClient = MinioClient.builder()
+            .endpoint(endpoint)
+            .credentials(accessKey, secretKey)
+            .build();
+
+        PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, monitor);
+
+        return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService);
     }
 }

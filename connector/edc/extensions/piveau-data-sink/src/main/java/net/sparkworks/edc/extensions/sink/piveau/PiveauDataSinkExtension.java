@@ -15,27 +15,19 @@
 package net.sparkworks.edc.extensions.sink.piveau;
 
 import org.eclipse.edc.connector.dataplane.spi.pipeline.PipelineService;
-import org.eclipse.edc.http.spi.EdcHttpClient;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.system.ServiceExtension;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
-import org.eclipse.edc.runtime.metamodel.annotation.Setting;
 
 import java.util.concurrent.Executors;
 
 /**
- * Extension that registers a routing data sink.
+ * Extension that registers the Piveau routing data sink.
  * Routes files to different destinations based on file type:
  * - JSON files: Piveau Hub Repo API
- * - CSV files: HTTP endpoint
+ * - CSV files: MinIO / S3-compatible bucket (configured per transfer via destination DataAddress)
  */
 public class PiveauDataSinkExtension implements ServiceExtension {
-
-    @Setting(value = "Piveau Hub Repo API URL for dataset registration")
-    private static final String PIVEAU_API_URL = "edc.external.api.url";
-
-    @Setting(value = "API key for Piveau Hub Repo")
-    private static final String PIVEAU_API_KEY = "edc.external.api.key";
 
     @Override
     public String name() {
@@ -45,23 +37,16 @@ public class PiveauDataSinkExtension implements ServiceExtension {
     @Inject
     private PipelineService pipelineService;
 
-    @Inject
-    private EdcHttpClient httpClient;
-
     @Override
     public void initialize(ServiceExtensionContext context) {
         var monitor = context.getMonitor();
         var executorService = Executors.newFixedThreadPool(10);
 
-        var piveauApiUrl = context.getSetting(PIVEAU_API_URL, "http://localhost:8080/datasets");
-        var piveauApiKey = context.getSetting(PIVEAU_API_KEY, "");
-
-        // Register routing data sink factory
-        pipelineService.registerFactory(new PiveauDataSinkFactory(monitor, httpClient, executorService));
+        pipelineService.registerFactory(new PiveauDataSinkFactory(monitor, executorService));
 
         monitor.info("✓ Piveau Routing Data Sink registered");
-        monitor.info("  Type: PiveauRouting");
-        monitor.info("  JSON files → Piveau Hub Repo API: " + piveauApiUrl);
-        monitor.info("  CSV files → HTTP endpoint (configured per transfer)");
+        monitor.info("  Type: PiveauData");
+        monitor.info("  JSON files → Piveau Hub Repo API (configured per transfer)");
+        monitor.info("  CSV files  → MinIO bucket (configured per transfer)");
     }
 }
