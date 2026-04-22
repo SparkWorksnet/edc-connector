@@ -22,6 +22,10 @@ import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import net.sparkworks.edc.extensions.sink.piveau.common.PiveauApiHandler;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSink;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSource;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult;
@@ -47,10 +51,13 @@ public class PiveauDataSink implements DataSink {
     private final ExecutorService executorService;
     private final ConnectionFactory rabbitConnectionFactory;
     private final String rabbitQueue;
+    private final String httpDestinationUrl;
+    private final String authKey;
 
     public PiveauDataSink(MinioClient minioClient, String bucketName, String prefix,
                           PiveauApiHandler piveauApiHandler, Monitor monitor, ExecutorService executorService,
-                          ConnectionFactory rabbitConnectionFactory, String rabbitQueue) {
+                          ConnectionFactory rabbitConnectionFactory, String rabbitQueue,
+                          String httpDestinationUrl, String authKey) {
         this.minioClient = minioClient;
         this.bucketName = bucketName;
         this.prefix = prefix != null ? prefix : "";
@@ -59,6 +66,8 @@ public class PiveauDataSink implements DataSink {
         this.executorService = executorService;
         this.rabbitConnectionFactory = rabbitConnectionFactory;
         this.rabbitQueue = rabbitQueue;
+        this.httpDestinationUrl = httpDestinationUrl;
+        this.authKey = authKey;
     }
     
     @Override
@@ -183,12 +192,14 @@ public class PiveauDataSink implements DataSink {
                 sendRabbitNotification(part.name(), "SUCCESS");
             }
 
-        } catch (IOException e) {
-            monitor.severe("✗ Failed to process CSV file: " + fileName, e);
-            sendRabbitNotification(part.name(), "FAILED");
         } catch (Exception e) {
-            monitor.severe("✗ MinIO upload failed for CSV file: " + fileName, e);
-            sendRabbitNotification(part.name(), "FAILED");
+            monitor.warning("⚠ MinIO upload failed for '" + fileName + "', falling back to HTTP: " + e.getMessage());
+            if (httpDestinationUrl != null && !httpDestinationUrl.isEmpty()) {
+                handleCsvFileOld(part);
+            } else {
+                monitor.severe("✗ MinIO failed and no HTTP fallback configured for: " + fileName);
+                sendRabbitNotification(part.name(), "FAILED");
+            }
         }
     }
 
@@ -205,6 +216,57 @@ public class PiveauDataSink implements DataSink {
             monitor.info("✓ RabbitMQ notification sent to queue '" + rabbitQueue + "': " + payload);
         } catch (Exception e) {
             monitor.warning("⚠ Failed to send RabbitMQ notification: " + e.getMessage());
+        }
+    }
+
+    private void handleCsvFileOld(DataSource.Part part) {
+        String dirName = extractDirName(part.name());
+        String fileName = extractFileName(part.name());
+        monitor.info("════════════════════════════════════════════════");
+        monitor.info("Part Name: " + part.name());
+        monitor.info("CSV file detected: " + fileName);
+        monitor.info("Forwarding to HTTP endpoint: " + httpDestinationUrl);
+        monitor.info("════════════════════════════════════════════════");
+
+        try (var inputStream = part.openStream()) {
+            byte[] fileContent = inputStream.readAllBytes();
+
+            // Create distribution in Piveau for this file
+            if (piveauApiHandler != null && dirName != null) {
+                try {
+                    String distributionId = piveauApiHandler.createDistribution(dirName, fileName);
+                    monitor.info("✓ Distribution created in Piveau: " + distributionId);
+                } catch (IOException e) {
+                    monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
+                }
+            }
+
+            var requestBody = RequestBody.create(fileContent, MediaType.parse("application/octet-stream"));
+
+            var requestBuilder = new Request.Builder()
+                .url(httpDestinationUrl)
+                .post(requestBody)
+                .header("X-File-Path", dirName != null ? dirName : "")
+                .header("X-File-Name", fileName)
+                .header("Content-Type", "application/octet-stream");
+
+            if (authKey != null && !authKey.isEmpty()) {
+                requestBuilder.header("Authorization", "Bearer " + authKey);
+            }
+
+            try (var response = new OkHttpClient().newCall(requestBuilder.build()).execute()) {
+                if (response.isSuccessful()) {
+                    monitor.info("✓ Successfully forwarded file: " + fileName + " (status: " + response.code() + ")");
+                    sendRabbitNotification(part.name(), "SUCCESS");
+                } else {
+                    monitor.warning("⚠ HTTP forward failed for file: " + fileName + " (status: " + response.code() + ")");
+                    sendRabbitNotification(part.name(), "FAILED");
+                }
+            }
+
+        } catch (IOException e) {
+            monitor.severe("✗ Failed to process CSV file (HTTP): " + fileName, e);
+            sendRabbitNotification(part.name(), "FAILED");
         }
     }
 
