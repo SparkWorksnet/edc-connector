@@ -16,8 +16,10 @@ package net.sparkworks.edc.extensions.sink.piveau;
 
 import com.rabbitmq.client.ConnectionFactory;
 import io.minio.MinioClient;
+import okhttp3.OkHttpClient;
 
 import java.net.URI;
+import java.util.concurrent.TimeUnit;
 import net.sparkworks.edc.extensions.sink.piveau.common.PiveauApiHandler;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSink;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSinkFactory;
@@ -89,9 +91,16 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
             monitor.info("  MinIO bucket:   " + bucketName);
             monitor.info("  MinIO prefix:   " + (prefix == null || prefix.isEmpty() ? "(root)" : prefix));
 
+            OkHttpClient httpClient = new OkHttpClient.Builder()
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .build();
+
             MinioClient minioClient = MinioClient.builder()
                 .endpoint(endpoint)
                 .credentials(accessKey, secretKey)
+                .httpClient(httpClient)
                 .build();
 
             PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, monitor);
