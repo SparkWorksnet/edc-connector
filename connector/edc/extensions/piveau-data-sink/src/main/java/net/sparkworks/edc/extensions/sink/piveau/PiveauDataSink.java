@@ -180,13 +180,15 @@ public class PiveauDataSink implements DataSink {
 
                 monitor.info("✓ Uploaded '" + objectKey + "' (" + fileContent.length + " bytes) to bucket '" + bucketName + "'");
 
-                sendRabbitNotification(objectKey, "SUCCESS");
+                sendRabbitNotification(part.name(), "SUCCESS");
             }
 
         } catch (IOException e) {
             monitor.severe("✗ Failed to process CSV file: " + fileName, e);
+            sendRabbitNotification(part.name(), "FAILED");
         } catch (Exception e) {
             monitor.severe("✗ MinIO upload failed for CSV file: " + fileName, e);
+            sendRabbitNotification(part.name(), "FAILED");
         }
     }
 
