@@ -53,11 +53,12 @@ public class PiveauDataSink implements DataSink {
     private final String rabbitQueue;
     private final String httpDestinationUrl;
     private final String authKey;
+    private final String experimentPrefix;
 
     public PiveauDataSink(MinioClient minioClient, String bucketName, String prefix,
                           PiveauApiHandler piveauApiHandler, Monitor monitor, ExecutorService executorService,
                           ConnectionFactory rabbitConnectionFactory, String rabbitQueue,
-                          String httpDestinationUrl, String authKey) {
+                          String httpDestinationUrl, String authKey, String experimentPrefix) {
         this.minioClient = minioClient;
         this.bucketName = bucketName;
         this.prefix = prefix != null ? prefix : "";
@@ -68,6 +69,7 @@ public class PiveauDataSink implements DataSink {
         this.rabbitQueue = rabbitQueue;
         this.httpDestinationUrl = httpDestinationUrl;
         this.authKey = authKey;
+        this.experimentPrefix = experimentPrefix;
     }
     
     @Override
@@ -145,18 +147,22 @@ public class PiveauDataSink implements DataSink {
     private void handleCsvFile(DataSource.Part part) {
         String dirName = extractDirName(part.name());
         String fileName = extractFileName(part.name());
+        String experimentId = experimentPrefix + "-" + dirName;
+        String destinationBucket = experimentPrefix == null ? bucketName : experimentPrefix;
         monitor.info("════════════════════════════════════════════════");
+        monitor.info("Registering dataset to Data Lake (s3):");
         monitor.info("Part Name: " + part.name());
         monitor.info("CSV file detected: " + fileName);
-        monitor.info("Registering dataset to Data Lake: "+ bucketName);
+        monitor.info("ExperimentId: " + experimentId);
+        monitor.info("DestinationBucket: " + destinationBucket);
         monitor.info("════════════════════════════════════════════════");
 
         try {
             // Ensure bucket exists
-            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
+            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(destinationBucket).build());
             if (!exists) {
-                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
-                monitor.info("Created bucket: " + bucketName);
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(destinationBucket).build());
+                monitor.info("Created bucket: " + destinationBucket);
             }
 
             try (var inputStream = part.openStream()) {
@@ -165,7 +171,7 @@ public class PiveauDataSink implements DataSink {
                 // Create distribution in Piveau for this file
                 if (piveauApiHandler != null && dirName != null) {
                     try {
-                        String distributionId = piveauApiHandler.createDistribution(dirName, fileName);
+                        String distributionId = piveauApiHandler.createDistribution(experimentId, fileName);
                         monitor.info("✓ Distribution created in Piveau: " + distributionId);
                     } catch (IOException e) {
                         monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
@@ -176,18 +182,18 @@ public class PiveauDataSink implements DataSink {
                 }
 
                 // Build the object key: optional prefix + original part path
-                String objectKey = buildObjectKey(part.name());
+                String objectKey = buildObjectKey(experimentId + "-" + fileName);
 
                 minioClient.putObject(
                     PutObjectArgs.builder()
-                        .bucket(bucketName)
+                        .bucket(destinationBucket)
                         .object(objectKey)
                         .stream(new ByteArrayInputStream(fileContent), fileContent.length, -1)
                         .contentType("application/octet-stream")
                         .build()
                 );
 
-                monitor.info("✓ Uploaded '" + objectKey + "' (" + fileContent.length + " bytes) to bucket '" + bucketName + "'");
+                monitor.info("✓ Uploaded '" + objectKey + "' (" + fileContent.length + " bytes) to bucket '" + destinationBucket + "'");
 
                 sendRabbitNotification(part.name(), "SUCCESS");
             }
@@ -222,10 +228,14 @@ public class PiveauDataSink implements DataSink {
     private void handleCsvFileOld(DataSource.Part part) {
         String dirName = extractDirName(part.name());
         String fileName = extractFileName(part.name());
+        String experimentId = experimentPrefix + "-" + dirName;
+        String destinationBucket = experimentPrefix == null ? bucketName : experimentPrefix;
         monitor.info("════════════════════════════════════════════════");
+        monitor.info("Registering dataset to Data Lake (http):");
         monitor.info("Part Name: " + part.name());
         monitor.info("CSV file detected: " + fileName);
-        monitor.info("Forwarding to HTTP endpoint: " + httpDestinationUrl);
+        monitor.info("ExperimentId: " + experimentId);
+        monitor.info("DestinationBucket: " + destinationBucket);
         monitor.info("════════════════════════════════════════════════");
 
         try (var inputStream = part.openStream()) {
@@ -234,7 +244,7 @@ public class PiveauDataSink implements DataSink {
             // Create distribution in Piveau for this file
             if (piveauApiHandler != null && dirName != null) {
                 try {
-                    String distributionId = piveauApiHandler.createDistribution(dirName, fileName);
+                    String distributionId = piveauApiHandler.createDistribution(experimentId, fileName);
                     monitor.info("✓ Distribution created in Piveau: " + distributionId);
                 } catch (IOException e) {
                     monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
@@ -246,8 +256,9 @@ public class PiveauDataSink implements DataSink {
             var requestBuilder = new Request.Builder()
                 .url(httpDestinationUrl)
                 .post(requestBody)
-                .header("X-File-Path", dirName != null ? dirName : "")
+                .header("X-File-Path", experimentId)
                 .header("X-File-Name", fileName)
+                .header("X-file-bucket", destinationBucket)
                 .header("Content-Type", "application/octet-stream");
 
             if (authKey != null && !authKey.isEmpty()) {

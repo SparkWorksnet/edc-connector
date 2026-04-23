@@ -39,13 +39,18 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
     private final ExecutorService executorService;
     private final ConnectionFactory rabbitConnectionFactory;
     private final String rabbitQueue;
+    private final String experimentPrefix;
+    private final String daliConnectorUrl;
 
     public PiveauDataSinkFactory(Monitor monitor, ExecutorService executorService,
-                                 ConnectionFactory rabbitConnectionFactory, String rabbitQueue) {
+                                 ConnectionFactory rabbitConnectionFactory, String rabbitQueue,
+                                 String experimentPrefix, String daliConnectorUrl) {
         this.monitor = monitor;
         this.executorService = executorService;
         this.rabbitConnectionFactory = rabbitConnectionFactory;
         this.rabbitQueue = rabbitQueue;
+        this.experimentPrefix = experimentPrefix;
+        this.daliConnectorUrl = daliConnectorUrl;
     }
 
     @Override
@@ -103,12 +108,12 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
                 .httpClient(httpClient)
                 .build();
 
-            PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, monitor);
+            PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, daliConnectorUrl, monitor);
 
             String httpDestinationUrl = dest.getStringProperty("baseUrl");
             String authKey            = dest.getStringProperty("authKey");
 
-            return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue, httpDestinationUrl, authKey);
+            return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue, httpDestinationUrl, authKey, experimentPrefix);
         } catch (Exception e) {
             monitor.severe("createSink failed for request " + request.getId() + ": " + e.getMessage(), e);
             throw e;

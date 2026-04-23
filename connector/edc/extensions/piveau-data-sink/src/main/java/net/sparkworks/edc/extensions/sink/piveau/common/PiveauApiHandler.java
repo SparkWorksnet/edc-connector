@@ -26,7 +26,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Handles interaction with the Piveau Hub Repo API.
@@ -42,19 +44,22 @@ public class PiveauApiHandler {
     private final Monitor monitor;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private String daliConnectorUrl;
     
-    public PiveauApiHandler(String apiUrl, String apiKey, String catalogueId, Monitor monitor) {
+    public PiveauApiHandler(String apiUrl, String apiKey, String catalogueId, String daliConnectorUrl, Monitor monitor) {
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
         this.catalogueId = catalogueId;
+        this.daliConnectorUrl = daliConnectorUrl;
         this.monitor = monitor;
         this.objectMapper = new ObjectMapper();
         this.httpClient = new OkHttpClient.Builder().connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS).readTimeout(30, java.util.concurrent.TimeUnit.SECONDS).writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build();
-        
+
         monitor.info("PiveauApiHandler initialized");
         monitor.info("  API URL: " + apiUrl);
         monitor.info("  API Key: " + (apiKey != null && !apiKey.isEmpty() ? "***configured***" : "not set"));
         monitor.info("  Catalogue Id: " + catalogueId);
+        monitor.info("  DALI Connector URL: " + daliConnectorUrl);
     }
     
     /**
@@ -271,11 +276,11 @@ public class PiveauApiHandler {
             throw new IOException("File name is required to create distribution");
         }
 
-        monitor.info("Creating distribution for dataset: " + datasetId);
-        monitor.info("  File: " + fileName);
-
         // Generate distribution ID from filename (remove extension and sanitize)
-        String distributionId = generateDistributionId(fileName);
+        String distributionId = generateDistributionId(datasetId + "-" + fileName);
+
+        monitor.info("Creating distribution for dataset: " + datasetId  + " filename: "+ fileName);
+        monitor.info("  DistributionId: " + distributionId);
 
         // Get current date for issued/modified
         String currentDate = LocalDate.now().format(DateTimeFormatter.ISO_DATE);
@@ -286,6 +291,8 @@ public class PiveauApiHandler {
 
         // Build DCAT-AP Turtle body for the distribution
         String turtleBody = buildDistributionTurtle(datasetId, distributionId, fileName, format, mediaType, currentDate);
+        
+        
 
         monitor.info("Generated Distribution Turtle:\n" + turtleBody);
 
@@ -357,13 +364,60 @@ public class PiveauApiHandler {
         turtle.append("    a                       dcat:Distribution ;\n");
         turtle.append("    dct:title               \"").append(escapeString(fileName)).append("\"@en ;\n");
         turtle.append("    dct:description         \"Data distribution for ").append(escapeString(fileName)).append("\"@en ;\n");
-        turtle.append("    dcat:accessURL          <").append(distributionUri).append("> ;\n");
+        //turtle.append("    dcat:accessURL          <").append(distributionUri).append("> ;\n");
         turtle.append("    dct:format              \"").append(format).append("\" ;\n");
         turtle.append("    dcat:mediaType          \"").append(mediaType).append("\" ;\n");
         turtle.append("    dct:issued              \"").append(issuedDate).append("\"^^xsd:date ;\n");
-        turtle.append("    dct:modified            \"").append(issuedDate).append("\"^^xsd:date .\n");
+        turtle.append("    dct:modified            \"").append(issuedDate).append("\"^^xsd:date ;\n");
+        turtle.append("    dcat:endpointURL        \"").append(daliConnectorUrl).append("\";\n");
+        turtle.append("    dcat:assetId            \"").append(distributionId).append("\";\n");
+        turtle.append("    dcat:endpointDescription\"").append("dspaceconnector").append("\".\n");
 
         return turtle.toString();
+    }
+
+    /**
+     * Register an asset to the DALI EDC connector's Management API.
+     *
+     * @param assetId     the asset ID to register
+     * @param dataAddress map of data address properties (must include "type")
+     * @throws IOException if the API call fails
+     */
+    public void registerAsset(String assetId, Map<String, String> dataAddress) throws IOException {
+        if (daliConnectorUrl == null || daliConnectorUrl.isEmpty()) {
+            monitor.warning("⚠ DALI connector URL not configured, skipping asset registration");
+            return;
+        }
+
+        Map<String, Object> asset = new HashMap<>();
+        asset.put("@context", Map.of("@vocab", "https://w3id.org/edc/v0.0.1/ns/"));
+        asset.put("@id", assetId);
+        asset.put("properties", Map.of());
+        asset.put("dataAddress", dataAddress);
+
+        String jsonBody = objectMapper.writeValueAsString(asset);
+        String url = daliConnectorUrl + "/management/v3/assets";
+
+        RequestBody requestBody = RequestBody.create(jsonBody, MediaType.parse("application/json"));
+        Request request = new Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .header("Content-Type", "application/json")
+            .build();
+
+        monitor.info("Registering asset '" + assetId + "' to DALI connector: " + url);
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                monitor.info("✓ Asset '" + assetId + "' registered to DALI connector (status: " + response.code() + ")");
+            } else {
+                String errorBody = response.body() != null ? response.body().string() : "No error details";
+                throw new IOException(String.format("Failed to register asset '%s' (HTTP %d): %s", assetId, response.code(), errorBody));
+            }
+        } catch (IOException e) {
+            monitor.severe("✗ Failed to register asset to DALI connector", e);
+            throw e;
+        }
     }
 
     /**

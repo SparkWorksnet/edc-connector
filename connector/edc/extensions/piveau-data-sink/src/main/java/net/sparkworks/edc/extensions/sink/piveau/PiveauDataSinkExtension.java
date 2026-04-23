@@ -46,6 +46,12 @@ public class PiveauDataSinkExtension implements ServiceExtension {
     @Setting(value = "RabbitMQ queue name", required = false)
     private static final String RABBIT_QUEUE = "edc.rabbitmq.queue";
 
+    @Setting(value = "Experiment prefix used to build experiment name from directory name", required = false)
+    private static final String EXPERIMENT_PREFIX = "edc.experiment.prefix";
+
+    @Setting(value = "DALI connector URL used in Piveau distribution endpoint", required = false)
+    private static final String DALI_CONNECTOR_URL = "edc.dali.connector.url";
+
     @Override
     public String name() {
         return "Piveau Routing Data Sink";
@@ -75,7 +81,10 @@ public class PiveauDataSinkExtension implements ServiceExtension {
             monitor.info("  RabbitMQ: " + rabbitHost + ":" + rabbitPort + " queue=" + rabbitQueue);
         }
 
-        pipelineService.registerFactory(new PiveauDataSinkFactory(monitor, executorService, rabbitConnectionFactory, rabbitQueue));
+        String experimentPrefix   = context.getSetting(EXPERIMENT_PREFIX, "");
+        String daliConnectorUrl   = context.getSetting(DALI_CONNECTOR_URL, "");
+
+        pipelineService.registerFactory(new PiveauDataSinkFactory(monitor, executorService, rabbitConnectionFactory, rabbitQueue, experimentPrefix, daliConnectorUrl));
 
         monitor.info("✓ Piveau Routing Data Sink registered");
         monitor.info("  Type: PiveauData");
