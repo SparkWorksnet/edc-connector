@@ -122,6 +122,9 @@ public class PiveauDataSink implements DataSink {
         monitor.info("════════════════════════════════════════════════");
         monitor.info("Part Name: " + part.name());
         monitor.info("JSON file detected: " + fileName);
+        monitor.info("experimentPrefix: " + experimentPrefix);
+        monitor.info("ExperimentId: " + experimentId);
+        monitor.info("DestinationBucket: " + destinationBucket);
         monitor.info("Registering dataset to Piveau Hub Repo API");
         monitor.info("File will NOT be forwarded to downstream");
         monitor.info("════════════════════════════════════════════════");
