@@ -138,7 +138,7 @@ public class PiveauDataSink implements DataSink {
             
             // Register to Piveau Hub Repo
             if (piveauApiHandler != null) {
-                String datasetId = piveauApiHandler.handleJsonFile(dirName, fileName, destinationBucket, Path.of(fileName), jsonContent);
+                String datasetId = piveauApiHandler.handleJsonFile(experimentId, fileName, destinationBucket, Path.of(fileName), jsonContent);
                 monitor.info("✓ Dataset registered to Piveau Hub Repo: " + datasetId);
             } else {
                 monitor.warning("⚠ Piveau API handler is not configured, skipping registration");
