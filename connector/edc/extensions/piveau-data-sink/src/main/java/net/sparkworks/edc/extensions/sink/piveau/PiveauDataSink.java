@@ -117,6 +117,8 @@ public class PiveauDataSink implements DataSink {
     private void handleJsonFile(DataSource.Part part) {
         String dirName = extractDirName(part.name());
         String fileName = extractFileName(part.name());
+        String experimentId = experimentPrefix + "-" + dirName;
+        String destinationBucket = experimentPrefix == null ? bucketName : experimentPrefix;
         monitor.info("════════════════════════════════════════════════");
         monitor.info("Part Name: " + part.name());
         monitor.info("JSON file detected: " + fileName);
@@ -133,7 +135,7 @@ public class PiveauDataSink implements DataSink {
             
             // Register to Piveau Hub Repo
             if (piveauApiHandler != null) {
-                String datasetId = piveauApiHandler.handleJsonFile(dirName, fileName, Path.of(fileName), jsonContent);
+                String datasetId = piveauApiHandler.handleJsonFile(dirName, fileName, destinationBucket, Path.of(fileName), jsonContent);
                 monitor.info("✓ Dataset registered to Piveau Hub Repo: " + datasetId);
             } else {
                 monitor.warning("⚠ Piveau API handler is not configured, skipping registration");

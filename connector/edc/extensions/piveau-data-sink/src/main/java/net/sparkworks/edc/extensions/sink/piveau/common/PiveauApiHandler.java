@@ -70,7 +70,7 @@ public class PiveauApiHandler {
      * @param jsonContent the content of the JSON file with dataset metadata
      * @throws IOException if parsing or API call fails
      */
-    public String handleJsonFile(final String datasetId, final String filename, Path filePath, String jsonContent) throws IOException {
+    public String handleJsonFile(final String datasetId, final String filename, final String catalogueId, Path filePath, String jsonContent) throws IOException {
         monitor.info("Processing dataset metadata from: " + filePath.getFileName());
         
         // Parse JSON input into DatasetMetadata object
@@ -94,7 +94,7 @@ public class PiveauApiHandler {
         monitor.debug("Generated DCAT-AP Turtle:\n" + turtleBody);
         
         // Build the URL with catalogue query parameter if provided
-        String url = apiUrl + "/" + datasetId + "?catalogue=" + this.catalogueId;
+        String url = apiUrl + "/" + datasetId + "?catalogue=" + catalogueId;
         
         // Build the HTTP request
         RequestBody requestBody = RequestBody.create(turtleBody, TURTLE);
@@ -107,7 +107,9 @@ public class PiveauApiHandler {
         
         Request request = requestBuilder.build();
         
-        monitor.info("Sending DCAT-AP dataset to Piveau Hub Repo: " + apiUrl);
+        monitor.info("Sending DCAT-AP dataset to Piveau Hub Repo: ");
+        monitor.info("  ApiUrl: " + apiUrl);
+        monitor.info("  CatalogueId: " + catalogueId);
         monitor.info("  Dataset ID: " + datasetId);
         
         // Execute the request
