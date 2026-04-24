@@ -81,10 +81,10 @@ public class PiveauApiHandler {
             throw new IOException("Dataset ID is required in JSON metadata");
         }
         
-        // Get current date for issued/modified if not provided
+        // Get current date as fallback for issued; modified defaults to issued date on first creation
         String currentDate = LocalDate.now().format(DateTimeFormatter.ISO_DATE);
         String issuedDate = metadata.getIssued() != null ? metadata.getIssued() : currentDate;
-        String modifiedDate = metadata.getModified() != null ? metadata.getModified() : currentDate;
+        String modifiedDate = issuedDate;
         
         // Build DCAT-AP Turtle body
         String turtleBody = buildDcatTurtle(datasetId, metadata, issuedDate, modifiedDate);
@@ -135,71 +135,186 @@ public class PiveauApiHandler {
     }
     
     /**
-     * Build DCAT-AP Turtle representation of the dataset.
+     * Build DCAT-AP / 6G-DALI Turtle representation of the dataset,
+     * compliant with the 6G-DALI Metadata Application Profile v1.0.
      */
     private String buildDcatTurtle(String datasetId, DatasetMetadata metadata, String issuedDate, String modifiedDate) {
         StringBuilder turtle = new StringBuilder();
 
-        // Add prefixes
+        // Prefixes (alphabetical)
+        turtle.append("@prefix adms:   <http://www.w3.org/ns/adms#> .\n");
+        turtle.append("@prefix dali:   <https://dali-project.eu/ns#> .\n");
         turtle.append("@prefix dcat:   <http://www.w3.org/ns/dcat#> .\n");
         turtle.append("@prefix dct:    <http://purl.org/dc/terms/> .\n");
         turtle.append("@prefix foaf:   <http://xmlns.com/foaf/0.1/> .\n");
-        turtle.append("@prefix vcard:  <http://www.w3.org/2006/vcard/ns#> .\n");
-        turtle.append("@prefix adms:   <http://www.w3.org/ns/adms#> .\n");
-        turtle.append("@prefix schema: <http://schema.org/> .\n");
-        turtle.append("@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .\n");
+        turtle.append("@prefix gax:    <https://registry.lab.gaia-x.eu/v1/api/trusted-shape-registry/v1/shapes/jsonld/trustframework#> .\n");
         turtle.append("@prefix prov:   <http://www.w3.org/ns/prov#> .\n");
+        turtle.append("@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n");
+        turtle.append("@prefix schema: <https://schema.org/> .\n");
+        turtle.append("@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .\n");
+        turtle.append("@prefix vcard:  <http://www.w3.org/2006/vcard/ns#> .\n");
         turtle.append("@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .\n\n");
 
-        // Build dataset URI
         String datasetUri = apiUrl + "/" + datasetId;
 
-        // Add dataset definition
         turtle.append("<").append(datasetUri).append(">\n");
-        turtle.append("    a                       dcat:Dataset ;\n");
-        turtle.append("    dct:title               \"").append(escapeString(metadata.getTitle())).append("\"@en ;\n");
-        turtle.append("    dct:description         \"").append(escapeString(metadata.getDescription())).append("\"@en ;\n");
-        turtle.append("    dct:issued              \"").append(issuedDate).append("\"^^xsd:date ;\n");
-        turtle.append("    dct:modified            \"").append(modifiedDate).append("\"^^xsd:date ;\n");
-        turtle.append("    dcat:theme              <http://publications.europa.eu/resource/authority/data-theme/").append(metadata.getTheme()).append("> ;\n");
 
-        // Add keywords if present
-        String keywords = formatKeywords(metadata.getKeywords());
-        if (keywords != null && !keywords.isEmpty()) {
-            turtle.append("    dcat:keyword            ").append(keywords).append(" ;\n");
+        // ── Types ──────────────────────────────────────────────────────────────
+        turtle.append("    a                         dcat:Dataset, gax:DataResource ;\n");
+
+        // ── Core identity (Mandatory) ──────────────────────────────────────────
+        turtle.append("    dct:title                 \"").append(escapeString(metadata.getTitle())).append("\"@en ;\n");
+        turtle.append("    dct:description           \"").append(escapeString(metadata.getDescription())).append("\"@en ;\n");
+        turtle.append("    dct:identifier            \"").append(escapeString(metadata.getIdentifier())).append("\" ;\n");
+        turtle.append("    dct:issued                \"").append(issuedDate).append("\"^^xsd:date ;\n");
+        turtle.append("    dct:modified              \"").append(modifiedDate).append("\"^^xsd:date ;\n");
+        turtle.append("    dct:language              <http://publications.europa.eu/resource/authority/language/")
+              .append(metadata.getLanguage()).append("> ;\n");
+
+        // Version (Recommended, optional)
+        if (hasText(metadata.getVersion())) {
+            turtle.append("    adms:version              \"").append(escapeString(metadata.getVersion())).append("\" ;\n");
         }
 
-        // Add columns (variable measured) if present
+        // ── Rights & License (Mandatory) ───────────────────────────────────────
+        turtle.append("    dct:accessRights          <http://publications.europa.eu/resource/authority/access-right/")
+              .append(metadata.getAccessRights()).append("> ;\n");
+        turtle.append("    dct:license               <").append(metadata.getLicense()).append("> ;\n");
+        turtle.append("    dct:conformsTo            <https://www.go-fair.org/fair-principles/> ;\n");
+
+        // ── SNS-JU / DALI (Mandatory) ──────────────────────────────────────────
+        turtle.append("    dali:snsProjectName       \"").append(escapeString(metadata.getSnsProjectName())).append("\" ;\n");
+
+        // ── GAIA-X (Mandatory) ─────────────────────────────────────────────────
+        if (hasText(metadata.getProducedBy())) {
+            turtle.append("    gax:producedBy            <").append(metadata.getProducedBy()).append("> ;\n");
+            turtle.append("    prov:wasAttributedTo      <").append(metadata.getProducedBy()).append("> ;\n");
+        }
+
+        // ── Classification (Recommended) ───────────────────────────────────────
+        turtle.append("    dcat:theme                <http://publications.europa.eu/resource/authority/data-theme/")
+              .append(metadata.getTheme()).append("> ;\n");
+
+        String keywords = formatKeywords(metadata.getKeywords());
+        if (keywords != null && !keywords.isEmpty()) {
+            turtle.append("    dcat:keyword              ").append(keywords).append(" ;\n");
+        }
+
+        // ── Agents (Recommended) ───────────────────────────────────────────────
+        if (hasText(metadata.getPublisher())) {
+            turtle.append("    dct:publisher             [ a foaf:Organization ; foaf:name \"")
+                  .append(escapeString(metadata.getPublisher())).append("\" ] ;\n");
+        }
+
+        if (hasText(metadata.getCreatorName())) {
+            turtle.append("    dct:creator               [ a foaf:Person ; foaf:name \"")
+                  .append(escapeString(metadata.getCreatorName()));
+            if (hasText(metadata.getCreatorEmail())) {
+                turtle.append("\" ; foaf:mbox <mailto:").append(metadata.getCreatorEmail()).append(">");
+            }
+            turtle.append(" ] ;\n");
+        }
+
+        if (hasText(metadata.getContactEmail())) {
+            turtle.append("    dcat:contactPoint         [ a vcard:Organization ; vcard:hasEmail <mailto:")
+                  .append(metadata.getContactEmail()).append("> ] ;\n");
+        }
+
+        // ── Content description (Recommended) ─────────────────────────────────
         if (metadata.getColumns() != null && !metadata.getColumns().isEmpty()) {
-            turtle.append("    schema:variableMeasured ");
+            turtle.append("    schema:variableMeasured   ");
             for (int i = 0; i < metadata.getColumns().size(); i++) {
-                if (i > 0) {
-                    turtle.append(", ");
-                }
+                if (i > 0) turtle.append(", ");
                 turtle.append("\"").append(escapeString(metadata.getColumns().get(i))).append("\"");
             }
             turtle.append(" ;\n");
         }
 
-        // Add publisher if present
-        if (metadata.getPublisher() != null && !metadata.getPublisher().isEmpty()) {
-            turtle.append("    dct:publisher           [ a foaf:Agent ; foaf:name \"").append(escapeString(metadata.getPublisher())).append("\" ] ;\n");
+        if (hasText(metadata.getMeasurementTechnique())) {
+            turtle.append("    schema:measurementTechnique \"")
+                  .append(escapeString(metadata.getMeasurementTechnique())).append("\"@en ;\n");
         }
 
-//        // Add record count if present
-//        if (metadata.getRecordCount() != null && !metadata.getRecordCount().isEmpty()) {
-//            turtle.append("    schema:numberOfItems    \"").append(escapeString(metadata.getRecordCount())).append("\" ;\n");
-//        }
+        // ── 5G/6G Testbed Context (Recommended) ───────────────────────────────
+        TestbedContext tc = metadata.getTestbedContext();
+        if (tc != null) {
+            turtle.append("    dali:testbedContext       [\n");
+            turtle.append("        a                     dali:TestbedContext ;\n");
+            appendTcStringProp(turtle, "dali:underlayPlatform",         tc.getUnderlayPlatform(), true);
+            appendTcStringProp(turtle, "dali:environment",              tc.getEnvironment(), false);
+            appendTcStringProp(turtle, "dali:networkDomain",            tc.getNetworkDomain(), false);
+            appendTcStringProp(turtle, "dali:ran3gppRelease",           tc.getRan3gppRelease(), false);
+            appendTcStringProp(turtle, "dali:ranNewRadioType",          tc.getRanNewRadioType(), false);
+            appendTcStringProp(turtle, "dali:ranSplit",                 tc.getRanSplit(), false);
+            appendTcStringProp(turtle, "dali:ranFocusedTechnology",     tc.getRanFocusedTechnology(), false);
+            appendTcStringProp(turtle, "dali:ranCoverageType",          tc.getRanCoverageType(), false);
+            appendTcStringProp(turtle, "dali:ranFrequencyBand",         tc.getRanFrequencyBand(), false);
+            if (tc.getRanBandwidthMHz() != null) {
+                turtle.append("        dali:ranBandwidthMHz      ").append(tc.getRanBandwidthMHz()).append(" ;\n");
+            }
+            if (tc.getRanMaxEndDevices() != null) {
+                turtle.append("        dali:ranMaxEndDevices     ").append(tc.getRanMaxEndDevices()).append(" ;\n");
+            }
+            appendTcStringProp(turtle, "dali:ranMobilityModel",         tc.getRanMobilityModel(), false);
+            appendTcStringProp(turtle, "dali:coreRelease",              tc.getCoreRelease(), false);
+            appendTcStringProp(turtle, "dali:coreSolution",             tc.getCoreSolution(), false);
+            appendTcStringProp(turtle, "dali:transportType",            tc.getTransportType(), false);
+            appendTcStringProp(turtle, "dali:computeOrchestratorType",  tc.getComputeOrchestratorType(), false);
+            if (tc.getComputeGpuUse() != null) {
+                turtle.append("        dali:computeGpuUse        ")
+                      .append(tc.getComputeGpuUse()).append("^^xsd:boolean ;\n");
+            }
+            appendTcStringProp(turtle, "dali:computeVirtualizationType", tc.getComputeVirtualizationType(), false);
+            appendTcStringProp(turtle, "dali:computeInfrastructureType", tc.getComputeInfrastructureType(), false);
+            appendTcStringProp(turtle, "dali:trafficOrigin",            tc.getTrafficOrigin(), false);
+            appendTcStringProp(turtle, "dali:trafficPattern",           tc.getTrafficPattern(), false);
+            appendTcStringProp(turtle, "dali:sliceType",                tc.getSliceType(), false);
+            appendTcStringProp(turtle, "dali:referencePlane",           tc.getReferencePlane(), false);
+            appendTcStringProp(turtle, "dali:relatedVertical",          tc.getRelatedVertical(), false);
+            appendTcStringProp(turtle, "dali:observationPointHorizontal", tc.getObservationPointHorizontal(), false);
+            appendTcStringProp(turtle, "dali:observationPointVertical", tc.getObservationPointVertical(), false);
+            appendTcListProp(turtle,   "dali:measurementFamily",        tc.getMeasurementFamily());
+            appendTcListProp(turtle,   "dali:measurementTool",          tc.getMeasurementTool());
+            turtle.append("    ] ;\n");
+        }
 
-//        // Add number of files if present
-//        if (metadata.getNumber_of_files() != null) {
-//            turtle.append("    schema:workExample      [ a schema:DataDownload ; schema:numberOfItems ").append(metadata.getNumber_of_files()).append(" ] ;\n");
-//        }
+        // Replace the final " ;\n" with " .\n" to close the subject block
+        String result = turtle.toString();
+        int lastSemi = result.lastIndexOf(" ;\n");
+        if (lastSemi >= 0) {
+            result = result.substring(0, lastSemi) + " .\n" + result.substring(lastSemi + 3);
+        }
+        return result;
+    }
 
-        // Add license (last line, no semicolon)
-        turtle.append("    dct:license             <").append(metadata.getLicense()).append("> .\n");
+    private boolean hasText(String s) {
+        return s != null && !s.isEmpty();
+    }
 
-        return turtle.toString();
+    /**
+     * Append a single-value predicate to a testbed context blank node.
+     * @param isUri when true the value is emitted as a URI {@code <value>}, otherwise as a string literal
+     */
+    private void appendTcStringProp(StringBuilder sb, String predicate, String value, boolean isUri) {
+        if (!hasText(value)) return;
+        sb.append("        ").append(predicate).append("  ");
+        if (isUri) {
+            sb.append("<").append(value).append(">");
+        } else {
+            sb.append("\"").append(escapeString(value)).append("\"");
+        }
+        sb.append(" ;\n");
+    }
+
+    /** Append a multi-value predicate (comma-separated string literals) to a testbed context blank node. */
+    private void appendTcListProp(StringBuilder sb, String predicate, List<String> values) {
+        if (values == null || values.isEmpty()) return;
+        sb.append("        ").append(predicate).append("  ");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append("\"").append(escapeString(values.get(i))).append("\"");
+        }
+        sb.append(" ;\n");
     }
     
     /**

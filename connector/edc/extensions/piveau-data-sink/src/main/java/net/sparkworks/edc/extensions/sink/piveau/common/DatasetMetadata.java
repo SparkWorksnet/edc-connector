@@ -25,59 +25,152 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Represents dataset metadata from JSON input that will be transformed to DCAT-AP format.
+ * Represents dataset metadata from JSON input that will be transformed to DCAT-AP / 6G-DALI format.
  */
 @Getter
 @Setter
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DatasetMetadata {
-    
+
+    // ── Core identity ─────────────────────────────────────────────────────────
+
     private String datasetId;
-    
+
+    /**
+     * Explicit {@code dct:identifier} value. Falls back to {@code datasetId} when absent.
+     * Suppressed so the custom getter below is used.
+     */
+    @Getter(AccessLevel.NONE)
+    private String identifier;
+
     @Getter(AccessLevel.NONE)
     private String title;
-    
+
     @Getter(AccessLevel.NONE)
     private String description;
-    
+
+    /** Dataset version string. Maps to {@code adms:version}. */
+    private String version;
+
+    private String issued;
+
+    private String modified;
+
+    // ── Classification ────────────────────────────────────────────────────────
+
+    /** EU Data Theme code (default: TECH). Maps to {@code dcat:theme}. */
+    private String theme = "TECH";
+
     @Setter(AccessLevel.NONE)
     private List<String> keywords = new ArrayList<>();
-    
-    private String theme = "TECH";
-    
+
+    /**
+     * Language code from EU MDR Languages vocabulary (default: ENG).
+     * Maps to {@code dct:language}.
+     */
+    private String language = "ENG";
+
+    // ── Rights & license ─────────────────────────────────────────────────────
+
+    /** License URI (default: CC-BY-4.0). Maps to {@code dct:license}. */
     private String license = "https://creativecommons.org/licenses/by/4.0/";
-    
-    private String issued;
-    
-    private String modified;
-    
-    // from eur
+
+    /**
+     * EU Access Right vocabulary code (default: PUBLIC).
+     * Maps to {@code dct:accessRights}.
+     */
+    @JsonProperty("access_rights")
+    @JsonAlias("accessRights")
+    private String accessRights = "PUBLIC";
+
+    // ── Agents ───────────────────────────────────────────────────────────────
+
+    /** Publishing organisation name. Maps to {@code dct:publisher foaf:name}. */
     private String publisher;
-    
-    @JsonProperty("record_count")
-    @JsonAlias({"recordCount"})
-    private String recordCount;
-    
-    @JsonProperty("file_format")
-    @JsonAlias({"fileFormat"})
-    private String fileFormat;
-    
+
+    /** Creator's full name. Maps to {@code dct:creator foaf:name}. */
+    @JsonProperty("creator_name")
+    @JsonAlias("creatorName")
+    private String creatorName;
+
+    /** Creator's e-mail address. Maps to {@code dct:creator foaf:mbox}. */
+    @JsonProperty("creator_email")
+    @JsonAlias("creatorEmail")
+    private String creatorEmail;
+
+    /** Contact e-mail for the dataset. Maps to {@code dcat:contactPoint vcard:hasEmail}. */
+    @JsonProperty("contact_email")
+    @JsonAlias("contactEmail")
+    private String contactEmail;
+
+    /**
+     * URI of the GAIA-X legal participant that produced the dataset (e.g. a testbed partner URI).
+     * Maps to {@code gax:producedBy} and {@code prov:wasAttributedTo}.
+     */
+    @JsonProperty("produced_by")
+    @JsonAlias("producedBy")
+    private String producedBy;
+
+    // ── SNS-JU / DALI ────────────────────────────────────────────────────────
+
+    /** SNS-JU project name (default: 6G-DALI). Maps to {@code dali:snsProjectName}. */
+    @JsonProperty("sns_project_name")
+    @JsonAlias("snsProjectName")
+    private String snsProjectName = "6G-DALI";
+
+    // ── Content description ───────────────────────────────────────────────────
+
+    /**
+     * Column / variable names for the dataset.
+     * Maps to {@code schema:variableMeasured}.
+     */
     private List<String> columns;
-    
+
+    /**
+     * Description of the measurement technique.
+     * Maps to {@code schema:measurementTechnique}.
+     */
+    @JsonProperty("measurement_technique")
+    @JsonAlias("measurementTechnique")
+    private String measurementTechnique;
+
+    /**
+     * 5G/6G testbed context following SNS-JU CMT V1.0.
+     * Maps to a {@code dali:testbedContext} blank node.
+     */
+    @JsonProperty("testbed_context")
+    @JsonAlias("testbedContext")
+    private TestbedContext testbedContext;
+
+    // ── Legacy / additional fields ────────────────────────────────────────────
+
+    @JsonProperty("record_count")
+    @JsonAlias("recordCount")
+    private String recordCount;
+
+    @JsonProperty("file_format")
+    @JsonAlias("fileFormat")
+    private String fileFormat;
+
     @JsonProperty("number_of_files")
-    @JsonAlias({"numberOfFiles"})
+    @JsonAlias("numberOfFiles")
     private Integer number_of_files;
-    
-    // Custom getters with logic
-    
+
+    // ── Custom getters ────────────────────────────────────────────────────────
+
     public String getTitle() {
         return title != null ? title : datasetId;
     }
-    
+
     public String getDescription() {
         return description != null ? description : getTitle();
     }
-    
+
+    /** Returns the explicit identifier if set, otherwise falls back to {@code datasetId}. */
+    public String getIdentifier() {
+        return (identifier != null && !identifier.isEmpty()) ? identifier : datasetId;
+    }
+
     public void setKeywords(List<String> keywords) {
         this.keywords = keywords != null ? keywords : new ArrayList<>();
     }
