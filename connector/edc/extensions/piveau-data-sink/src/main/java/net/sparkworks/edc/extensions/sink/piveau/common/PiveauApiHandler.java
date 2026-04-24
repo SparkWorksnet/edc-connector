@@ -461,34 +461,35 @@ public class PiveauApiHandler {
     }
 
     /**
-     * Build DCAT-AP Turtle representation of a distribution.
+     * Build DCAT-AP / 6G-DALI Turtle representation of a distribution,
+     * compliant with the 6G-DALI Metadata Application Profile v1.0.
      */
     private String buildDistributionTurtle(String datasetId, String distributionId,
                                           String fileName, String format,
                                           String mediaType, String issuedDate) {
         StringBuilder turtle = new StringBuilder();
 
-        // Add prefixes
+        // Prefixes
+        turtle.append("@prefix dali:   <https://dali-project.eu/ns#> .\n");
         turtle.append("@prefix dcat:   <http://www.w3.org/ns/dcat#> .\n");
+        turtle.append("@prefix dcatap: <http://data.europa.eu/r5r/> .\n");
         turtle.append("@prefix dct:    <http://purl.org/dc/terms/> .\n");
         turtle.append("@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .\n\n");
 
-        // Build distribution URI
         String distributionUri = apiUrl + "/" + datasetId + "/distributions/" + distributionId;
 
-        // Add distribution definition
         turtle.append("<").append(distributionUri).append(">\n");
         turtle.append("    a                       dcat:Distribution ;\n");
         turtle.append("    dct:title               \"").append(escapeString(fileName)).append("\"@en ;\n");
         turtle.append("    dct:description         \"Data distribution for ").append(escapeString(fileName)).append("\"@en ;\n");
-        //turtle.append("    dcat:accessURL          <").append(distributionUri).append("> ;\n");
+        turtle.append("    dcat:accessURL          <").append(daliConnectorUrl).append("> ;\n");
+        turtle.append("    dali:assetId            \"").append(escapeString(distributionId)).append("\" ;\n");
+        turtle.append("    dali:connectorType      \"dspaceconnector\" ;\n");
         turtle.append("    dct:format              \"").append(format).append("\" ;\n");
         turtle.append("    dcat:mediaType          \"").append(mediaType).append("\" ;\n");
+        turtle.append("    dct:license             <https://creativecommons.org/licenses/by/4.0/> ;\n");
         turtle.append("    dct:issued              \"").append(issuedDate).append("\"^^xsd:date ;\n");
-        turtle.append("    dct:modified            \"").append(issuedDate).append("\"^^xsd:date ;\n");
-        turtle.append("    dcat:endpointURL        \"").append(daliConnectorUrl).append("\";\n");
-        turtle.append("    dcat:assetId            \"").append(distributionId).append("\";\n");
-        turtle.append("    dcat:endpointDescription\"").append("dspaceconnector").append("\".\n");
+        turtle.append("    dcatap:availability     <http://data.europa.eu/r5r/availability/STABLE> .\n");
 
         return turtle.toString();
     }
