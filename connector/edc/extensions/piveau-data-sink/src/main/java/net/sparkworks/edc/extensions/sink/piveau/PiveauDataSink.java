@@ -156,7 +156,7 @@ public class PiveauDataSink implements DataSink {
                 minioClient.makeBucket(MakeBucketArgs.builder().bucket(destinationBucket).build());
                 monitor.info("Created bucket: " + destinationBucket);
             }
-            String objectKey = buildObjectKey(experimentId + "-" + fileName);
+            final String objectKey = experimentId + "/" + fileName;
             minioClient.putObject(
                 PutObjectArgs.builder()
                     .bucket(destinationBucket)
@@ -212,10 +212,8 @@ public class PiveauDataSink implements DataSink {
                 } else {
                     monitor.warning("⚠ Piveau API handler not configured or dataset ID not available, skipping distribution creation");
                 }
-
-                // Build the object key: optional prefix + original part path
-                String objectKey = buildObjectKey(experimentId + "-" + fileName);
-
+                
+                final String objectKey = experimentId + "/" + fileName;
                 minioClient.putObject(
                     PutObjectArgs.builder()
                         .bucket(destinationBucket)
