@@ -90,7 +90,6 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
 
             String piveauUrl       = dest.getStringProperty("piveauUrl");
             String piveauApiKey    = dest.getStringProperty("piveauApiKey");
-            String piveauCatalogue = dest.getStringProperty("piveauCatalogue");
 
             monitor.info("  MinIO endpoint: " + endpoint);
             monitor.info("  MinIO bucket:   " + bucketName);
@@ -108,7 +107,7 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
                 .httpClient(httpClient)
                 .build();
 
-            PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, piveauCatalogue, daliConnectorUrl, monitor);
+            PiveauApiHandler piveauApiHandler = new PiveauApiHandler(piveauUrl, piveauApiKey, daliConnectorUrl, monitor);
 
             String httpDestinationUrl = dest.getStringProperty("baseUrl");
             String authKey            = dest.getStringProperty("authKey");

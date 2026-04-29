@@ -198,7 +198,7 @@ public class PiveauDataSink implements DataSink {
 
                 // Create distribution in Piveau for this file (only if dataset is already registered)
                 if (piveauApiHandler != null && dirName != null) {
-                    if (piveauApiHandler.datasetExists(experimentId)) {
+                    if (piveauApiHandler.datasetExists(experimentId, destinationBucket)) {
                         try {
                             String distributionId = piveauApiHandler.createDistribution(experimentId, fileName);
                             monitor.info("✓ Distribution created in Piveau: " + distributionId);
@@ -207,7 +207,7 @@ public class PiveauDataSink implements DataSink {
                             // Continue with upload even if distribution creation fails
                         }
                     } else {
-                        piveauApiHandler.schedulePendingDistribution(experimentId, fileName);
+                        piveauApiHandler.schedulePendingDistribution(experimentId, fileName, destinationBucket);
                     }
                 } else {
                     monitor.warning("⚠ Piveau API handler not configured or dataset ID not available, skipping distribution creation");

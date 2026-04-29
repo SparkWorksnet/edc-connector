@@ -48,7 +48,6 @@ public class PiveauApiHandler {
 
     private final String apiUrl;
     private final String apiKey;
-    private final String catalogueId;
     private final Monitor monitor;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -79,10 +78,9 @@ public class PiveauApiHandler {
         }
     }
 
-    public PiveauApiHandler(String apiUrl, String apiKey, String catalogueId, String daliConnectorUrl, Monitor monitor) {
+    public PiveauApiHandler(String apiUrl, String apiKey, String daliConnectorUrl, Monitor monitor) {
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
-        this.catalogueId = catalogueId;
         this.daliConnectorUrl = daliConnectorUrl;
         this.monitor = monitor;
         this.objectMapper = new ObjectMapper();
@@ -107,7 +105,6 @@ public class PiveauApiHandler {
         monitor.info("PiveauApiHandler initialized");
         monitor.info("  API URL: " + apiUrl);
         monitor.info("  API Key: " + (apiKey != null && !apiKey.isEmpty() ? "***configured***" : "not set"));
-        monitor.info("  Catalogue Id: " + catalogueId);
         monitor.info("  DALI Connector URL: " + daliConnectorUrl);
         monitor.info("  Pending retry interval: " + PENDING_RETRY_INTERVAL_SECONDS + "s (max " + PENDING_MAX_RETRIES + " attempts)");
     }
@@ -431,7 +428,7 @@ public class PiveauApiHandler {
      * @param datasetId the dataset ID to look up
      * @return true if the dataset exists (HTTP 200), false otherwise
      */
-    public boolean datasetExists(String datasetId) {
+    public boolean datasetExists(String datasetId, String catalogueId) {
         if (!hasText(apiUrl) || !hasText(datasetId)) {
             return false;
         }
@@ -476,13 +473,13 @@ public class PiveauApiHandler {
      * The task returns {@code false} (retry) while the dataset is absent, and {@code true} once
      * the distribution is successfully created.
      */
-    public void schedulePendingDistribution(String datasetId, String fileName) {
+    public void schedulePendingDistribution(String datasetId, String fileName, String catalogueId) {
         monitor.info("⏳ Queuing distribution for '" + fileName + "' under dataset '" + datasetId
-                + "' — will retry every " + PENDING_RETRY_INTERVAL_SECONDS + "s");
+                + "' (catalogue: " + catalogueId + ") — will retry every " + PENDING_RETRY_INTERVAL_SECONDS + "s");
         pendingTasks.add(new PendingTask(
                 "Distribution: " + fileName + " → dataset " + datasetId,
                 () -> {
-                    if (!datasetExists(datasetId)) return false;
+                    if (!datasetExists(datasetId, catalogueId)) return false;
                     createDistribution(datasetId, fileName);
                     return true;
                 }
