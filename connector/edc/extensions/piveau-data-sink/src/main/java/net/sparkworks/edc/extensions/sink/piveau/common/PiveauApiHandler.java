@@ -258,6 +258,8 @@ public class PiveauApiHandler {
                   .append(escapeString(metadata.getCreatorName()));
             if (hasText(metadata.getCreatorEmail())) {
                 turtle.append("\" ; foaf:mbox <mailto:").append(metadata.getCreatorEmail()).append(">");
+            } else {
+                turtle.append("\"");
             }
             turtle.append(" ] ;\n");
         }
