@@ -26,9 +26,15 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Handles interaction with the Piveau Hub Repo API.
@@ -37,7 +43,9 @@ import java.util.Map;
 public class PiveauApiHandler {
     
     private static final MediaType TURTLE = MediaType.parse("text/turtle");
-    
+    private static final int PENDING_RETRY_INTERVAL_SECONDS = 60;
+    private static final int PENDING_MAX_RETRIES = 10;
+
     private final String apiUrl;
     private final String apiKey;
     private final String catalogueId;
@@ -45,7 +53,32 @@ public class PiveauApiHandler {
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private String daliConnectorUrl;
-    
+
+    private final ConcurrentLinkedQueue<PendingTask> pendingTasks = new ConcurrentLinkedQueue<>();
+    private final ScheduledExecutorService retryScheduler;
+
+    /**
+     * A retryable unit of work submitted to the pending task queue.
+     * {@code action.attempt()} returns {@code true} when the task is complete,
+     * {@code false} when it should be retried (e.g. a dependency is not yet ready),
+     * or throws {@link IOException} on a recoverable error (also retried).
+     */
+    @FunctionalInterface
+    private interface TaskAction {
+        boolean attempt() throws IOException;
+    }
+
+    private static class PendingTask {
+        final String description;
+        final TaskAction action;
+        final AtomicInteger retryCount = new AtomicInteger(0);
+
+        PendingTask(String description, TaskAction action) {
+            this.description = description;
+            this.action = action;
+        }
+    }
+
     public PiveauApiHandler(String apiUrl, String apiKey, String catalogueId, String daliConnectorUrl, Monitor monitor) {
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
@@ -53,13 +86,30 @@ public class PiveauApiHandler {
         this.daliConnectorUrl = daliConnectorUrl;
         this.monitor = monitor;
         this.objectMapper = new ObjectMapper();
-        this.httpClient = new OkHttpClient.Builder().connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS).readTimeout(30, java.util.concurrent.TimeUnit.SECONDS).writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build();
+        this.httpClient = new OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .build();
+
+        this.retryScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "piveau-pending-retry");
+            t.setDaemon(true);
+            return t;
+        });
+        this.retryScheduler.scheduleWithFixedDelay(
+                this::retryPendingTasks,
+                PENDING_RETRY_INTERVAL_SECONDS,
+                PENDING_RETRY_INTERVAL_SECONDS,
+                TimeUnit.SECONDS
+        );
 
         monitor.info("PiveauApiHandler initialized");
         monitor.info("  API URL: " + apiUrl);
         monitor.info("  API Key: " + (apiKey != null && !apiKey.isEmpty() ? "***configured***" : "not set"));
         monitor.info("  Catalogue Id: " + catalogueId);
         monitor.info("  DALI Connector URL: " + daliConnectorUrl);
+        monitor.info("  Pending retry interval: " + PENDING_RETRY_INTERVAL_SECONDS + "s (max " + PENDING_MAX_RETRIES + " attempts)");
     }
     
     /**
@@ -375,6 +425,104 @@ public class PiveauApiHandler {
         }
     }
     
+    /**
+     * Check whether a dataset is already registered in the Piveau Hub Repo.
+     *
+     * @param datasetId the dataset ID to look up
+     * @return true if the dataset exists (HTTP 200), false otherwise
+     */
+    public boolean datasetExists(String datasetId) {
+        if (!hasText(apiUrl) || !hasText(datasetId)) {
+            return false;
+        }
+        String url = apiUrl + "/" + datasetId + "?catalogue=" + catalogueId;
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(url)
+                .get()
+                .header("Accept", "text/turtle");
+        if (hasText(apiKey)) {
+            requestBuilder.header("X-API-Key", apiKey);
+        }
+        try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
+            boolean exists = response.code() == 200;
+            monitor.info(exists
+                    ? "✓ Dataset '" + datasetId + "' is registered in Piveau"
+                    : "⚠ Dataset '" + datasetId + "' is NOT registered in Piveau (HTTP " + response.code() + ")");
+            return exists;
+        } catch (IOException e) {
+            monitor.warning("⚠ Could not check dataset existence in Piveau: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Enqueue a JSON metadata file whose Piveau dataset registration failed.
+     * The task returns {@code true} on success and throws on API error (both cases handled by the retry loop).
+     */
+    public void schedulePendingDataset(String datasetId, String fileName, String catalogueId, String jsonContent) {
+        monitor.info("⏳ Queuing dataset registration for '" + datasetId
+                + "' — will retry every " + PENDING_RETRY_INTERVAL_SECONDS + "s");
+        pendingTasks.add(new PendingTask(
+                "Dataset registration: " + datasetId,
+                () -> {
+                    handleJsonFile(datasetId, fileName, catalogueId, Path.of(fileName), jsonContent);
+                    return true;
+                }
+        ));
+    }
+
+    /**
+     * Enqueue a CSV file whose distribution creation is waiting for its parent dataset to be registered.
+     * The task returns {@code false} (retry) while the dataset is absent, and {@code true} once
+     * the distribution is successfully created.
+     */
+    public void schedulePendingDistribution(String datasetId, String fileName) {
+        monitor.info("⏳ Queuing distribution for '" + fileName + "' under dataset '" + datasetId
+                + "' — will retry every " + PENDING_RETRY_INTERVAL_SECONDS + "s");
+        pendingTasks.add(new PendingTask(
+                "Distribution: " + fileName + " → dataset " + datasetId,
+                () -> {
+                    if (!datasetExists(datasetId)) return false;
+                    createDistribution(datasetId, fileName);
+                    return true;
+                }
+        ));
+    }
+
+    /**
+     * Periodic retry task: drains the pending queue and re-executes each task.
+     * Tasks that return {@code false} or throw are re-queued up to {@value #PENDING_MAX_RETRIES} times.
+     */
+    private void retryPendingTasks() {
+        if (pendingTasks.isEmpty()) return;
+        monitor.info("🔄 Retrying " + pendingTasks.size() + " pending task(s)...");
+
+        List<PendingTask> snapshot = new ArrayList<>(pendingTasks);
+        pendingTasks.clear();
+
+        for (PendingTask task : snapshot) {
+            int attempt = task.retryCount.incrementAndGet();
+            if (attempt > PENDING_MAX_RETRIES) {
+                monitor.warning("⚠ Giving up after " + PENDING_MAX_RETRIES + " attempts: " + task.description);
+                continue;
+            }
+            try {
+                boolean done = task.action.attempt();
+                if (done) {
+                    monitor.info("✓ Completed (attempt " + attempt + "): " + task.description);
+                } else {
+                    monitor.info("⏳ Not ready yet (attempt " + attempt + "/" + PENDING_MAX_RETRIES
+                            + "): " + task.description + " — re-queuing");
+                    pendingTasks.add(task);
+                }
+            } catch (IOException e) {
+                monitor.warning("⚠ Attempt " + attempt + "/" + PENDING_MAX_RETRIES + " failed: "
+                        + task.description + ": " + e.getMessage() + " — re-queuing");
+                pendingTasks.add(task);
+            }
+        }
+    }
+
     /**
      * Create a distribution for a file in an existing Piveau dataset.
      * The distribution represents the actual data file (CSV, etc.) associated with the dataset.

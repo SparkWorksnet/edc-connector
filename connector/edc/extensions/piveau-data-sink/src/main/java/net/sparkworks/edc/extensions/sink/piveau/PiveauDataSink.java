@@ -130,22 +130,45 @@ public class PiveauDataSink implements DataSink {
         monitor.info("════════════════════════════════════════════════");
         
         try {
-            // Read JSON content
-            String jsonContent;
+            // Read JSON content once — used for both Piveau registration and MinIO upload
+            byte[] fileBytes;
             try (var inputStream = part.openStream()) {
-                jsonContent = new String(inputStream.readAllBytes());
+                fileBytes = inputStream.readAllBytes();
             }
-            
+            String jsonContent = new String(fileBytes);
+
             // Register to Piveau Hub Repo
             if (piveauApiHandler != null) {
-                String datasetId = piveauApiHandler.handleJsonFile(experimentId, fileName, destinationBucket, Path.of(fileName), jsonContent);
-                monitor.info("✓ Dataset registered to Piveau Hub Repo: " + datasetId);
+                try {
+                    String datasetId = piveauApiHandler.handleJsonFile(experimentId, fileName, destinationBucket, Path.of(fileName), jsonContent);
+                    monitor.info("✓ Dataset registered to Piveau Hub Repo: " + datasetId);
+                } catch (IOException e) {
+                    monitor.warning("⚠ Failed to register dataset '" + experimentId + "' to Piveau: " + e.getMessage() + " — scheduling retry");
+                    piveauApiHandler.schedulePendingDataset(experimentId, fileName, destinationBucket, jsonContent);
+                }
             } else {
                 monitor.warning("⚠ Piveau API handler is not configured, skipping registration");
             }
-            
-        } catch (IOException e) {
-            monitor.severe("✗ Failed to process JSON file: " + fileName, e);
+
+            // Upload JSON file to MinIO
+            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(destinationBucket).build());
+            if (!exists) {
+                minioClient.makeBucket(MakeBucketArgs.builder().bucket(destinationBucket).build());
+                monitor.info("Created bucket: " + destinationBucket);
+            }
+            String objectKey = buildObjectKey(experimentId + "-" + fileName);
+            minioClient.putObject(
+                PutObjectArgs.builder()
+                    .bucket(destinationBucket)
+                    .object(objectKey)
+                    .stream(new ByteArrayInputStream(fileBytes), fileBytes.length, -1)
+                    .contentType("application/json")
+                    .build()
+            );
+            monitor.info("✓ Uploaded '" + objectKey + "' (" + fileBytes.length + " bytes) to bucket '" + destinationBucket + "'");
+
+        } catch (Exception e) {
+            monitor.severe("✗ Failed to upload JSON file to MinIO: " + fileName, e);
         }
     }
     
@@ -173,14 +196,18 @@ public class PiveauDataSink implements DataSink {
             try (var inputStream = part.openStream()) {
                 byte[] fileContent = inputStream.readAllBytes();
 
-                // Create distribution in Piveau for this file
+                // Create distribution in Piveau for this file (only if dataset is already registered)
                 if (piveauApiHandler != null && dirName != null) {
-                    try {
-                        String distributionId = piveauApiHandler.createDistribution(experimentId, fileName);
-                        monitor.info("✓ Distribution created in Piveau: " + distributionId);
-                    } catch (IOException e) {
-                        monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
-                        // Continue with upload even if distribution creation fails
+                    if (piveauApiHandler.datasetExists(experimentId)) {
+                        try {
+                            String distributionId = piveauApiHandler.createDistribution(experimentId, fileName);
+                            monitor.info("✓ Distribution created in Piveau: " + distributionId);
+                        } catch (IOException e) {
+                            monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
+                            // Continue with upload even if distribution creation fails
+                        }
+                    } else {
+                        piveauApiHandler.schedulePendingDistribution(experimentId, fileName);
                     }
                 } else {
                     monitor.warning("⚠ Piveau API handler not configured or dataset ID not available, skipping distribution creation");
