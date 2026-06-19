@@ -55,7 +55,7 @@ public class CustomHttpDataSinkWithPartNameFactory implements DataSinkFactory {
     
     @Override
     public String supportedType() {
-        return "HttpData";
+        return "HttpDataDali";
     }
     
     @Override
