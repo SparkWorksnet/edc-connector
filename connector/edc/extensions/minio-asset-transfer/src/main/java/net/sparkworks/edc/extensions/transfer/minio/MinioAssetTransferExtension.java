@@ -12,26 +12,22 @@
  *
  */
 
-package net.sparkworks.edc.extensions.source.minio;
+package net.sparkworks.edc.extensions.transfer.minio;
 
 import org.eclipse.edc.connector.dataplane.spi.pipeline.PipelineService;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.system.ServiceExtension;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
 
-/**
- * Extension that registers a MinIO-based one-shot data source for transferring
- * existing objects from a MinIO bucket.
- */
-public class MinioAssetDataSourceExtension implements ServiceExtension {
-
-    @Override
-    public String name() {
-        return "MinIO Asset Data Source";
-    }
+public class MinioAssetTransferExtension implements ServiceExtension {
 
     @Inject
     private PipelineService pipelineService;
+
+    @Override
+    public String name() {
+        return "MinIO Asset Transfer";
+    }
 
     @Override
     public void initialize(ServiceExtensionContext context) {
@@ -39,6 +35,7 @@ public class MinioAssetDataSourceExtension implements ServiceExtension {
 
         pipelineService.registerFactory(new MinioAssetDataSourceFactory(monitor));
 
-        monitor.info("MinIO Asset Data Source registered (type: MinioAsset)");
+        monitor.info("MinIO Asset Transfer extension registered (source type: MinioAsset)");
     }
+
 }

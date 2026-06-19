@@ -12,7 +12,7 @@
  *
  */
 
-package net.sparkworks.edc.extensions.source.minio;
+package net.sparkworks.edc.extensions.transfer.minio;
 
 import io.minio.MinioClient;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSource;
