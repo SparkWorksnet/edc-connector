@@ -29,6 +29,6 @@ public class CustomHttpDataSinkWithPartNameExtension implements ServiceExtension
 
         pipelineService.registerFactory(factory);
 
-        monitor.info("Custom HTTP Data Sink registered (type: HttpData, using raw OkHttpClient)");
+        monitor.info("Custom HTTP Data Sink registered (type: PresignedHttpData, using raw OkHttpClient)");
     }
 }
