@@ -1,1 +1,2 @@
 net.sparkworks.edc.extensions.data.http.CustomHttpDataSinkWithPartNameExtension
+net.sparkworks.edc.extensions.data.http.CustomPresignedHttpDataSinkWithPartNameExtension
