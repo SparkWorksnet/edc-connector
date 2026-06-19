@@ -9,5 +9,5 @@ dependencies {
     implementation(libs.edc.runtime.metamodel)
     implementation(libs.edc.http.spi)
     implementation(libs.edc.data.plane.core)
-    implementation(libs.edc.data.plane.http)
+    implementation("org.eclipse.edc:data-plane-http-spi:${libs.versions.edc.get()}")
 }
