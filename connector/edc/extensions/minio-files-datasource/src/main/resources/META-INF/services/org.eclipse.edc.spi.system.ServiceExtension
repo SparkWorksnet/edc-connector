@@ -1,1 +1,2 @@
 net.sparkworks.edc.extensions.source.minio.MinioFilesDataSourceExtension
+net.sparkworks.edc.extensions.source.minio.MinioAssetDataSourceExtension
