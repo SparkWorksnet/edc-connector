@@ -71,10 +71,11 @@ public class CustomHttpDataSinkWithPartName implements DataSink {
                         // Create request body with file content
                         var requestBody = RequestBody.create(fileContent, MediaType.parse("application/octet-stream"));
 
-                        // Build HTTP request with custom headers
+                        // Build HTTP request — use PUT if destination specifies it
+                        String method = destinationAddress.getStringProperty("method", "POST");
                         var requestBuilder = new Request.Builder()
                                 .url(destinationAddress.getBaseUrl())
-                                .post(requestBody)
+                                .method(method, requestBody)
                                 .header("X-File-Path", filePath)
                                 .header("X-File-Name", extractFileName(filePath))
                                 .header("Content-Type", "application/octet-stream");
@@ -87,7 +88,7 @@ public class CustomHttpDataSinkWithPartName implements DataSink {
 
                         var httpRequest = requestBuilder.build();
 
-                        monitor.info("Sending HTTP POST to: " + destinationAddress.getBaseUrl());
+                        monitor.info("Sending HTTP " + method + " to: " + destinationAddress.getBaseUrl());
                         
                         // Execute the HTTP request
                         try (var response = httpClient.execute(httpRequest)) {
