@@ -7,7 +7,9 @@ dependencies {
     implementation(libs.edc.transfer.spi)
     implementation(libs.edc.data.plane.spi)
     implementation(libs.edc.data.plane.core)
+    implementation(libs.edc.data.plane.selector.core)
     implementation(libs.edc.runtime.metamodel)
+    implementation(libs.edc.web.spi)
 
     implementation(libs.minio.io)
 }
