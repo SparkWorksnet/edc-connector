@@ -76,6 +76,7 @@ public class CustomHttpDataSinkWithPartName implements DataSink {
                         var requestBuilder = new Request.Builder()
                                 .url(destinationAddress.getBaseUrl())
                                 .method(method, requestBody)
+                                .header("Content-Length", String.valueOf(fileContent.length))
                                 .header("X-File-Path", filePath)
                                 .header("X-File-Name", extractFileName(filePath))
                                 .header("Content-Type", "application/octet-stream");
