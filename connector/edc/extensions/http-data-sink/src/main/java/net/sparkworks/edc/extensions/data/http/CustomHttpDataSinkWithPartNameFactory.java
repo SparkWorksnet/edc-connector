@@ -3,7 +3,6 @@ package net.sparkworks.edc.extensions.data.http;
 import org.eclipse.edc.connector.dataplane.http.spi.HttpDataAddress;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSink;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSinkFactory;
-import org.eclipse.edc.http.spi.EdcHttpClient;
 import org.eclipse.edc.spi.monitor.Monitor;
 import org.eclipse.edc.spi.result.Result;
 import org.eclipse.edc.spi.types.domain.transfer.DataFlowStartMessage;
@@ -14,13 +13,11 @@ import java.util.concurrent.ExecutorService;
  * Factory that creates CustomHttpDataSinkWithPartName instances
  */
 public class CustomHttpDataSinkWithPartNameFactory implements DataSinkFactory {
-    
-    private final EdcHttpClient httpClient;
+
     private final Monitor monitor;
     private final ExecutorService executorService;
-    
-    public CustomHttpDataSinkWithPartNameFactory(EdcHttpClient httpClient, Monitor monitor, ExecutorService executorService) {
-        this.httpClient = httpClient;
+
+    public CustomHttpDataSinkWithPartNameFactory(Monitor monitor, ExecutorService executorService) {
         this.monitor = monitor;
         this.executorService = executorService;
     }
@@ -55,7 +52,7 @@ public class CustomHttpDataSinkWithPartNameFactory implements DataSinkFactory {
     
     @Override
     public String supportedType() {
-        return "HttpDataDali";
+        return "HttpData";
     }
     
     @Override
@@ -68,6 +65,6 @@ public class CustomHttpDataSinkWithPartNameFactory implements DataSinkFactory {
         monitor.info("Destination URL: " + destinationAddress.getBaseUrl());
         
         // Create and return the custom sink
-        return new CustomHttpDataSinkWithPartName(httpClient, destinationAddress, monitor, executorService);
+        return new CustomHttpDataSinkWithPartName(destinationAddress, monitor, executorService);
     }
 }

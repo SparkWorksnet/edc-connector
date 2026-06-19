@@ -1,38 +1,42 @@
 package net.sparkworks.edc.extensions.data.http;
 
 import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import org.eclipse.edc.connector.dataplane.http.spi.HttpDataAddress;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSink;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.DataSource;
 import org.eclipse.edc.connector.dataplane.spi.pipeline.StreamResult;
-import org.eclipse.edc.http.spi.EdcHttpClient;
 import org.eclipse.edc.spi.monitor.Monitor;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Custom HTTP Data Sink that adds the file path as a custom header
  * and supports Bearer token authentication.
  */
 public class CustomHttpDataSinkWithPartName implements DataSink {
-    
-    private final EdcHttpClient httpClient;
+
+    private static final OkHttpClient OK_HTTP_CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(300, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build();
+
     private final HttpDataAddress destinationAddress;
     private final Monitor monitor;
     private final ExecutorService executorService;
     private final String authKey;
 
-    public CustomHttpDataSinkWithPartName(EdcHttpClient httpClient, HttpDataAddress destinationAddress, Monitor monitor, ExecutorService executorService) {
-        this.httpClient = httpClient;
+    public CustomHttpDataSinkWithPartName(HttpDataAddress destinationAddress, Monitor monitor, ExecutorService executorService) {
         this.destinationAddress = destinationAddress;
         this.monitor = monitor;
         this.executorService = executorService;
 
-        // Extract auth token from destination address properties
         this.authKey = destinationAddress.getAuthKey();
         if (authKey != null && !authKey.isEmpty()) {
             monitor.info("Auth token configured for HTTP data sink");
@@ -92,7 +96,7 @@ public class CustomHttpDataSinkWithPartName implements DataSink {
                         monitor.info("Sending HTTP " + method + " to: " + destinationAddress.getBaseUrl());
                         
                         // Execute the HTTP request
-                        try (var response = httpClient.execute(httpRequest)) {
+                        try (var response = OK_HTTP_CLIENT.newCall(httpRequest).execute()) {
                             if (response.isSuccessful()) {
                                 monitor.info("Successfully transferred file: " + filePath + " (status: " + response.code() + ")");
                             } else {
