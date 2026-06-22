@@ -32,7 +32,7 @@ public class CatalogUiExtension implements ServiceExtension {
         var monitor = context.getMonitor();
 
         var controller = new CatalogUiController(assetIndex, contractDefinitionStore, policyDefinitionStore, monitor);
-        webService.registerResource("catalog-ui", controller);
+        webService.registerResource("catalogui", controller);
 
         monitor.info("Catalog UI available at http://localhost:<catalog-ui-port>/catalog");
     }
