@@ -1,12 +1,13 @@
 package net.sparkworks.edc.extensions.ui;
 
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import io.minio.GetObjectArgs;
+import io.minio.MinioClient;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.contract.spi.offer.store.ContractDefinitionStore;
 import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
@@ -153,6 +154,56 @@ public class CatalogUiController {
         } catch (Exception e) {
             monitor.severe("Failed to list policies", e);
             return Response.serverError().entity("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}").build();
+        }
+    }
+
+    @GET
+    @Path("catalog/api/assets/{assetId}/download")
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
+    public Response downloadAsset(@PathParam("assetId") String assetId) {
+        try {
+            var asset = assetIndex.findById(assetId);
+            if (asset == null) {
+                return Response.status(404).entity("Asset not found: " + assetId).build();
+            }
+
+            var da = asset.getDataAddress();
+            var type = da.getType();
+
+            if ("MinioAsset".equals(type) || "MinioFiles".equals(type)) {
+                var endpoint = da.getStringProperty("endpoint");
+                var bucket = da.getStringProperty("bucketName");
+                var accessKey = da.getStringProperty("accessKey");
+                var secretKey = da.getStringProperty("secretKey");
+                var prefix = da.getStringProperty("prefix");
+
+                var client = MinioClient.builder()
+                        .endpoint(endpoint)
+                        .credentials(accessKey, secretKey)
+                        .build();
+
+                var stream = client.getObject(GetObjectArgs.builder()
+                        .bucket(bucket)
+                        .object(prefix)
+                        .build());
+
+                var fileName = prefix.contains("/") ? prefix.substring(prefix.lastIndexOf('/') + 1) : prefix;
+
+                return Response.ok(stream)
+                        .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                        .build();
+
+            } else if ("HttpData".equals(type)) {
+                var baseUrl = da.getStringProperty("baseUrl");
+                return Response.temporaryRedirect(java.net.URI.create(baseUrl)).build();
+
+            } else {
+                return Response.status(400).entity("Download not supported for type: " + type).build();
+            }
+
+        } catch (Exception e) {
+            monitor.severe("Failed to download asset: " + assetId, e);
+            return Response.serverError().entity("Download failed: " + e.getMessage()).build();
         }
     }
 

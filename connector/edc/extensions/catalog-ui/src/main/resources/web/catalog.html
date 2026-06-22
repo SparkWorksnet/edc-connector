@@ -28,6 +28,8 @@
         .badge-minio { background: #e8f5e9; color: #2e7d32; }
         .badge-http { background: #e3f2fd; color: #1565c0; }
         .badge-other { background: #f3e5f5; color: #7b1fa2; }
+        .btn-download { padding: 0.35rem 0.8rem; border: 1px solid #1a237e; background: #fff; color: #1a237e; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .btn-download:hover { background: #1a237e; color: #fff; }
         .loading { text-align: center; padding: 3rem; color: #888; }
         .error { text-align: center; padding: 2rem; color: #c62828; background: #ffebee; border-radius: 8px; }
         .panel { display: none; }
@@ -97,7 +99,7 @@
                 document.getElementById('assets-table').innerHTML = '<div class="loading">No assets found</div>';
                 return;
             }
-            let html = '<table><thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Source</th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>Asset</th><th>Type</th><th>Source</th><th></th></tr></thead><tbody>';
             for (const a of assets) {
                 const type = a.dataAddress ? a.dataAddress.type : '';
                 const source = a.dataAddress
@@ -107,10 +109,11 @@
                 html += '<tr>';
                 html += '<td><strong>' + esc(a.name || a.id) + '</strong>';
                 if (a.contentType) html += '<br><span style="color:#888;font-size:0.75rem">' + esc(a.contentType) + '</span>';
+                html += '<br><span style="font-family:monospace;font-size:0.75rem;color:#999">' + esc(a.id) + '</span>';
                 html += '</td>';
-                html += '<td style="font-family:monospace;font-size:0.8rem">' + esc(a.id) + '</td>';
                 html += '<td><span class="badge ' + badgeClass(type) + '">' + esc(type) + '</span></td>';
                 html += '<td style="font-size:0.8rem;color:#555">' + esc(bucket + source) + '</td>';
+                html += '<td><button class="btn-download" onclick="downloadAsset(\'' + escAttr(a.id) + '\')">Download</button></td>';
                 html += '</tr>';
             }
             html += '</tbody></table>';
@@ -122,6 +125,15 @@
             const d = document.createElement('div');
             d.textContent = s;
             return d.innerHTML;
+        }
+
+        function escAttr(s) {
+            if (!s) return '';
+            return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        function downloadAsset(assetId) {
+            window.location.href = BASE + '/api/assets/' + encodeURIComponent(assetId) + '/download';
         }
 
         async function load() {
