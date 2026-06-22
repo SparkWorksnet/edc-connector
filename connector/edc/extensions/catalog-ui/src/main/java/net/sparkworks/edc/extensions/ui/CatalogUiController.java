@@ -268,7 +268,6 @@ public class CatalogUiController {
                 sb.append("\"transferType\":\"").append(escapeJson(tp.getTransferType())).append("\",");
                 sb.append("\"counterPartyAddress\":\"").append(escapeJson(tp.getCounterPartyAddress())).append("\",");
                 sb.append("\"destinationType\":\"").append(escapeJson(tp.getDestinationType())).append("\",");
-                sb.append("\"createdAt\":\"").append(formatEpochMillis(tp.getCreatedAt())).append("\",");
                 sb.append("\"stateTimestamp\":\"").append(formatEpochMillis(tp.getStateTimestamp())).append("\"");
                 sb.append("}");
             }
