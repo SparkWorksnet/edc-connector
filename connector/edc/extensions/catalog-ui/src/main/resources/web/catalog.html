@@ -186,7 +186,7 @@
                 document.getElementById('transfers-table').innerHTML = '<div class="loading">No transfers</div>';
                 return;
             }
-            let html = '<table><thead><tr><th>Transfer</th><th>State</th><th>Asset</th><th>Type</th><th>Destination</th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>Transfer</th><th>State</th><th>Asset</th><th>Type</th><th>Destination</th><th>Created</th><th>Last Updated</th></tr></thead><tbody>';
             for (const t of transfers) {
                 html += '<tr>';
                 html += '<td class="mono">' + esc(t.id) + '<br><span class="muted">Contract: ' + esc(t.contractId) + '</span></td>';
@@ -194,6 +194,8 @@
                 html += '<td class="mono">' + esc(t.assetId) + '</td>';
                 html += '<td>' + esc(t.transferType) + '<br><span class="muted">' + esc(t.type) + '</span></td>';
                 html += '<td>' + esc(t.destinationType) + '<br><span class="muted">' + esc(t.counterPartyAddress) + '</span></td>';
+                html += '<td class="muted">' + esc(t.createdAt) + '</td>';
+                html += '<td class="muted">' + esc(t.stateTimestamp) + '</td>';
                 html += '</tr>';
             }
             html += '</tbody></table>';

@@ -267,7 +267,9 @@ public class CatalogUiController {
                 sb.append("\"contractId\":\"").append(escapeJson(tp.getContractId())).append("\",");
                 sb.append("\"transferType\":\"").append(escapeJson(tp.getTransferType())).append("\",");
                 sb.append("\"counterPartyAddress\":\"").append(escapeJson(tp.getCounterPartyAddress())).append("\",");
-                sb.append("\"destinationType\":\"").append(escapeJson(tp.getDestinationType())).append("\"");
+                sb.append("\"destinationType\":\"").append(escapeJson(tp.getDestinationType())).append("\",");
+                sb.append("\"createdAt\":\"").append(formatEpochMillis(tp.getCreatedAt())).append("\",");
+                sb.append("\"stateTimestamp\":\"").append(formatEpochMillis(tp.getStateTimestamp())).append("\"");
                 sb.append("}");
             }
             sb.append("]");
@@ -339,6 +341,13 @@ public class CatalogUiController {
         return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                 .withZone(ZoneId.of("UTC"))
                 .format(Instant.ofEpochSecond(epochSeconds));
+    }
+
+    private String formatEpochMillis(long epochMillis) {
+        if (epochMillis <= 0) return "";
+        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                .withZone(ZoneId.of("UTC"))
+                .format(Instant.ofEpochMilli(epochMillis));
     }
 
     private String escapeJson(String s) {
