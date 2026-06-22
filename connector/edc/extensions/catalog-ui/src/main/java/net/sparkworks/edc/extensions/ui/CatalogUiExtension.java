@@ -3,6 +3,9 @@ package net.sparkworks.edc.extensions.ui;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.contract.spi.offer.store.ContractDefinitionStore;
 import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
+import org.eclipse.edc.connector.controlplane.services.spi.contractagreement.ContractAgreementService;
+import org.eclipse.edc.connector.controlplane.services.spi.contractnegotiation.ContractNegotiationService;
+import org.eclipse.edc.connector.controlplane.services.spi.transferprocess.TransferProcessService;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.system.ServiceExtension;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
@@ -22,6 +25,15 @@ public class CatalogUiExtension implements ServiceExtension {
     @Inject
     private PolicyDefinitionStore policyDefinitionStore;
 
+    @Inject
+    private ContractAgreementService contractAgreementService;
+
+    @Inject
+    private ContractNegotiationService contractNegotiationService;
+
+    @Inject
+    private TransferProcessService transferProcessService;
+
     @Override
     public String name() {
         return "Catalog UI";
@@ -31,7 +43,15 @@ public class CatalogUiExtension implements ServiceExtension {
     public void initialize(ServiceExtensionContext context) {
         var monitor = context.getMonitor();
 
-        var controller = new CatalogUiController(assetIndex, contractDefinitionStore, policyDefinitionStore, monitor);
+        var controller = new CatalogUiController(
+                assetIndex,
+                contractDefinitionStore,
+                policyDefinitionStore,
+                contractAgreementService,
+                contractNegotiationService,
+                transferProcessService,
+                monitor
+        );
         webService.registerResource(controller);
 
         monitor.info("Catalog UI available at http://localhost:<http-port>/api/catalog");

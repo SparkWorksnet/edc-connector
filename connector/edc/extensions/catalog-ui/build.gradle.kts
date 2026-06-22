@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     implementation(libs.edc.control.plane.spi)
+    implementation(libs.edc.transfer.spi)
     implementation("org.eclipse.edc:asset-spi:${libs.versions.edc.get()}")
     implementation(libs.edc.runtime.metamodel)
     implementation(libs.edc.web.spi)

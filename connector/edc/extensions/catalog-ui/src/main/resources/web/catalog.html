@@ -11,11 +11,11 @@
         header h1 { font-size: 1.4rem; font-weight: 600; }
         header p { font-size: 0.85rem; opacity: 0.8; margin-top: 0.3rem; }
         .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
-        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
         .tab { padding: 0.5rem 1.2rem; border: none; background: #e0e0e0; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
         .tab.active { background: #1a237e; color: #fff; }
-        .stats { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
-        .stat-card { background: #fff; border-radius: 8px; padding: 1rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; }
+        .stats { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .stat-card { background: #fff; border-radius: 8px; padding: 1rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; min-width: 120px; }
         .stat-card .label { font-size: 0.75rem; text-transform: uppercase; color: #888; }
         .stat-card .value { font-size: 1.8rem; font-weight: 700; color: #1a237e; }
         .search { margin-bottom: 1rem; }
@@ -28,12 +28,18 @@
         .badge-minio { background: #e8f5e9; color: #2e7d32; }
         .badge-http { background: #e3f2fd; color: #1565c0; }
         .badge-other { background: #f3e5f5; color: #7b1fa2; }
+        .badge-state { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .state-finalized, .state-completed { background: #e8f5e9; color: #2e7d32; }
+        .state-started, .state-requested, .state-initial { background: #fff3e0; color: #e65100; }
+        .state-terminated, .state-error { background: #ffebee; color: #c62828; }
         .btn-download { padding: 0.35rem 0.8rem; border: 1px solid #1a237e; background: #fff; color: #1a237e; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
         .btn-download:hover { background: #1a237e; color: #fff; }
         .loading { text-align: center; padding: 3rem; color: #888; }
         .error { text-align: center; padding: 2rem; color: #c62828; background: #ffebee; border-radius: 8px; }
         .panel { display: none; }
         .panel.active { display: block; }
+        .mono { font-family: monospace; font-size: 0.8rem; }
+        .muted { color: #999; font-size: 0.75rem; }
     </style>
 </head>
 <body>
@@ -46,11 +52,17 @@
             <div class="stat-card"><div class="label">Assets</div><div class="value" id="asset-count">-</div></div>
             <div class="stat-card"><div class="label">Contracts</div><div class="value" id="contract-count">-</div></div>
             <div class="stat-card"><div class="label">Policies</div><div class="value" id="policy-count">-</div></div>
+            <div class="stat-card"><div class="label">Agreements</div><div class="value" id="agreement-count">-</div></div>
+            <div class="stat-card"><div class="label">Negotiations</div><div class="value" id="negotiation-count">-</div></div>
+            <div class="stat-card"><div class="label">Transfers</div><div class="value" id="transfer-count">-</div></div>
         </div>
         <div class="tabs">
-            <button class="tab active" onclick="showPanel('assets')">Assets</button>
-            <button class="tab" onclick="showPanel('contracts')">Contracts</button>
-            <button class="tab" onclick="showPanel('policies')">Policies</button>
+            <button class="tab active" onclick="showPanel('assets', this)">Assets</button>
+            <button class="tab" onclick="showPanel('contracts', this)">Contracts</button>
+            <button class="tab" onclick="showPanel('policies', this)">Policies</button>
+            <button class="tab" onclick="showPanel('agreements', this)">Agreements</button>
+            <button class="tab" onclick="showPanel('negotiations', this)">Negotiations</button>
+            <button class="tab" onclick="showPanel('transfers', this)">Transfers</button>
         </div>
 
         <div id="assets-panel" class="panel active">
@@ -59,11 +71,23 @@
         </div>
 
         <div id="contracts-panel" class="panel">
-            <div id="contracts-table"><div class="loading">Loading contracts...</div></div>
+            <div id="contracts-table"><div class="loading">Loading...</div></div>
         </div>
 
         <div id="policies-panel" class="panel">
-            <div id="policies-table"><div class="loading">Loading policies...</div></div>
+            <div id="policies-table"><div class="loading">Loading...</div></div>
+        </div>
+
+        <div id="agreements-panel" class="panel">
+            <div id="agreements-table"><div class="loading">Loading...</div></div>
+        </div>
+
+        <div id="negotiations-panel" class="panel">
+            <div id="negotiations-table"><div class="loading">Loading...</div></div>
+        </div>
+
+        <div id="transfers-panel" class="panel">
+            <div id="transfers-table"><div class="loading">Loading...</div></div>
         </div>
     </div>
 
@@ -77,11 +101,19 @@
             return 'badge-other';
         }
 
-        function showPanel(name) {
+        function stateClass(state) {
+            if (!state) return 'badge-state';
+            var s = state.toLowerCase();
+            if (s === 'finalized' || s === 'completed') return 'badge-state state-finalized';
+            if (s === 'terminated' || s === 'error') return 'badge-state state-terminated';
+            return 'badge-state state-started';
+        }
+
+        function showPanel(name, btn) {
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.getElementById(name + '-panel').classList.add('active');
-            event.target.classList.add('active');
+            btn.classList.add('active');
         }
 
         function filterAssets() {
@@ -108,8 +140,8 @@
                 const bucket = a.dataAddress && a.dataAddress.bucketName ? a.dataAddress.bucketName + '/' : '';
                 html += '<tr>';
                 html += '<td><strong>' + esc(a.name || a.id) + '</strong>';
-                if (a.contentType) html += '<br><span style="color:#888;font-size:0.75rem">' + esc(a.contentType) + '</span>';
-                html += '<br><span style="font-family:monospace;font-size:0.75rem;color:#999">' + esc(a.id) + '</span>';
+                if (a.contentType) html += '<br><span class="muted">' + esc(a.contentType) + '</span>';
+                html += '<br><span class="mono muted">' + esc(a.id) + '</span>';
                 html += '</td>';
                 html += '<td><span class="badge ' + badgeClass(type) + '">' + esc(type) + '</span></td>';
                 html += '<td style="font-size:0.8rem;color:#555">' + esc(bucket + source) + '</td>';
@@ -118,6 +150,63 @@
             }
             html += '</tbody></table>';
             document.getElementById('assets-table').innerHTML = html;
+        }
+
+        function renderAgreements(agreements) {
+            if (agreements.length === 0) {
+                document.getElementById('agreements-table').innerHTML = '<div class="loading">No agreements</div>';
+                return;
+            }
+            let html = '<table><thead><tr><th>Agreement</th><th>Asset</th><th>Provider</th><th>Consumer</th><th>Signed</th></tr></thead><tbody>';
+            for (const a of agreements) {
+                html += '<tr>';
+                html += '<td class="mono">' + esc(a.id) + '</td>';
+                html += '<td class="mono">' + esc(a.assetId) + '</td>';
+                html += '<td>' + esc(a.providerId) + '</td>';
+                html += '<td>' + esc(a.consumerId) + '</td>';
+                html += '<td class="muted">' + esc(a.signingDate) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('agreements-table').innerHTML = html;
+        }
+
+        function renderNegotiations(negotiations) {
+            if (negotiations.length === 0) {
+                document.getElementById('negotiations-table').innerHTML = '<div class="loading">No negotiations</div>';
+                return;
+            }
+            let html = '<table><thead><tr><th>Negotiation</th><th>State</th><th>Type</th><th>Counter Party</th><th>Agreement</th></tr></thead><tbody>';
+            for (const n of negotiations) {
+                html += '<tr>';
+                html += '<td class="mono">' + esc(n.id) + '</td>';
+                html += '<td><span class="' + stateClass(n.state) + '">' + esc(n.state) + '</span></td>';
+                html += '<td>' + esc(n.type) + '</td>';
+                html += '<td>' + esc(n.counterPartyId) + '<br><span class="muted">' + esc(n.counterPartyAddress) + '</span></td>';
+                html += '<td class="mono">' + esc(n.agreementId) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('negotiations-table').innerHTML = html;
+        }
+
+        function renderTransfers(transfers) {
+            if (transfers.length === 0) {
+                document.getElementById('transfers-table').innerHTML = '<div class="loading">No transfers</div>';
+                return;
+            }
+            let html = '<table><thead><tr><th>Transfer</th><th>State</th><th>Asset</th><th>Type</th><th>Destination</th></tr></thead><tbody>';
+            for (const t of transfers) {
+                html += '<tr>';
+                html += '<td class="mono">' + esc(t.id) + '<br><span class="muted">Contract: ' + esc(t.contractId) + '</span></td>';
+                html += '<td><span class="' + stateClass(t.state) + '">' + esc(t.state) + '</span></td>';
+                html += '<td class="mono">' + esc(t.assetId) + '</td>';
+                html += '<td>' + esc(t.transferType) + '<br><span class="muted">' + esc(t.type) + '</span></td>';
+                html += '<td>' + esc(t.destinationType) + '<br><span class="muted">' + esc(t.counterPartyAddress) + '</span></td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('transfers-table').innerHTML = html;
         }
 
         function esc(s) {
@@ -138,19 +227,28 @@
 
         async function load() {
             try {
-                const [assetsRes, contractsRes, policiesRes] = await Promise.all([
+                const [assetsRes, contractsRes, policiesRes, agreementsRes, negotiationsRes, transfersRes] = await Promise.all([
                     fetch(BASE + '/api/assets'),
                     fetch(BASE + '/api/contracts'),
-                    fetch(BASE + '/api/policies')
+                    fetch(BASE + '/api/policies'),
+                    fetch(BASE + '/api/agreements'),
+                    fetch(BASE + '/api/negotiations'),
+                    fetch(BASE + '/api/transfers')
                 ]);
 
                 allAssets = await assetsRes.json();
                 const contracts = await contractsRes.json();
                 const policies = await policiesRes.json();
+                const agreements = await agreementsRes.json();
+                const negotiations = await negotiationsRes.json();
+                const transfers = await transfersRes.json();
 
                 document.getElementById('asset-count').textContent = allAssets.length;
                 document.getElementById('contract-count').textContent = contracts.length;
                 document.getElementById('policy-count').textContent = policies.length;
+                document.getElementById('agreement-count').textContent = agreements.length;
+                document.getElementById('negotiation-count').textContent = negotiations.length;
+                document.getElementById('transfer-count').textContent = transfers.length;
                 document.getElementById('connector-info').textContent = 'Connector at ' + window.location.host;
 
                 renderAssets(allAssets);
@@ -159,7 +257,7 @@
                 if (contracts.length > 0) {
                     let html = '<table><thead><tr><th>ID</th><th>Access Policy</th><th>Contract Policy</th></tr></thead><tbody>';
                     for (const c of contracts) {
-                        html += '<tr><td style="font-family:monospace">' + esc(c.id) + '</td><td>' + esc(c.accessPolicyId) + '</td><td>' + esc(c.contractPolicyId) + '</td></tr>';
+                        html += '<tr><td class="mono">' + esc(c.id) + '</td><td>' + esc(c.accessPolicyId) + '</td><td>' + esc(c.contractPolicyId) + '</td></tr>';
                     }
                     html += '</tbody></table>';
                     document.getElementById('contracts-table').innerHTML = html;
@@ -171,13 +269,17 @@
                 if (policies.length > 0) {
                     let html = '<table><thead><tr><th>ID</th></tr></thead><tbody>';
                     for (const p of policies) {
-                        html += '<tr><td style="font-family:monospace">' + esc(p.id) + '</td></tr>';
+                        html += '<tr><td class="mono">' + esc(p.id) + '</td></tr>';
                     }
                     html += '</tbody></table>';
                     document.getElementById('policies-table').innerHTML = html;
                 } else {
                     document.getElementById('policies-table').innerHTML = '<div class="loading">No policies</div>';
                 }
+
+                renderAgreements(agreements);
+                renderNegotiations(negotiations);
+                renderTransfers(transfers);
 
             } catch (e) {
                 document.getElementById('assets-table').innerHTML = '<div class="error">Failed to load: ' + e.message + '</div>';
