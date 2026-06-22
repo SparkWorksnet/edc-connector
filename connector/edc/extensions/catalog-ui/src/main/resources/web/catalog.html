@@ -11,11 +11,10 @@
         header h1 { font-size: 1.4rem; font-weight: 600; }
         header p { font-size: 0.85rem; opacity: 0.8; margin-top: 0.3rem; }
         .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
-        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
-        .tab { padding: 0.5rem 1.2rem; border: none; background: #e0e0e0; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
-        .tab.active { background: #1a237e; color: #fff; }
         .stats { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
-        .stat-card { background: #fff; border-radius: 8px; padding: 1rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; min-width: 120px; }
+        .stat-card { background: #fff; border-radius: 8px; padding: 1rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; min-width: 120px; cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; border: 2px solid transparent; }
+        .stat-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .stat-card.active { border-color: #1a237e; box-shadow: 0 2px 8px rgba(26,35,126,0.25); }
         .stat-card .label { font-size: 0.75rem; text-transform: uppercase; color: #888; }
         .stat-card .value { font-size: 1.8rem; font-weight: 700; color: #1a237e; }
         .search { margin-bottom: 1rem; }
@@ -49,20 +48,12 @@
     </header>
     <div class="container">
         <div class="stats">
-            <div class="stat-card"><div class="label">Assets</div><div class="value" id="asset-count">-</div></div>
-            <div class="stat-card"><div class="label">Contracts</div><div class="value" id="contract-count">-</div></div>
-            <div class="stat-card"><div class="label">Policies</div><div class="value" id="policy-count">-</div></div>
-            <div class="stat-card"><div class="label">Agreements</div><div class="value" id="agreement-count">-</div></div>
-            <div class="stat-card"><div class="label">Negotiations</div><div class="value" id="negotiation-count">-</div></div>
-            <div class="stat-card"><div class="label">Transfers</div><div class="value" id="transfer-count">-</div></div>
-        </div>
-        <div class="tabs">
-            <button class="tab active" onclick="showPanel('assets', this)">Assets</button>
-            <button class="tab" onclick="showPanel('contracts', this)">Contracts</button>
-            <button class="tab" onclick="showPanel('policies', this)">Policies</button>
-            <button class="tab" onclick="showPanel('agreements', this)">Agreements</button>
-            <button class="tab" onclick="showPanel('negotiations', this)">Negotiations</button>
-            <button class="tab" onclick="showPanel('transfers', this)">Transfers</button>
+            <div class="stat-card active" onclick="showPanel('assets', this)"><div class="label">Assets</div><div class="value" id="asset-count">-</div></div>
+            <div class="stat-card" onclick="showPanel('contracts', this)"><div class="label">Contracts</div><div class="value" id="contract-count">-</div></div>
+            <div class="stat-card" onclick="showPanel('policies', this)"><div class="label">Policies</div><div class="value" id="policy-count">-</div></div>
+            <div class="stat-card" onclick="showPanel('agreements', this)"><div class="label">Agreements</div><div class="value" id="agreement-count">-</div></div>
+            <div class="stat-card" onclick="showPanel('negotiations', this)"><div class="label">Negotiations</div><div class="value" id="negotiation-count">-</div></div>
+            <div class="stat-card" onclick="showPanel('transfers', this)"><div class="label">Transfers</div><div class="value" id="transfer-count">-</div></div>
         </div>
 
         <div id="assets-panel" class="panel active">
@@ -109,11 +100,11 @@
             return 'badge-state state-started';
         }
 
-        function showPanel(name, btn) {
+        function showPanel(name, card) {
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
             document.getElementById(name + '-panel').classList.add('active');
-            btn.classList.add('active');
+            card.classList.add('active');
         }
 
         function filterAssets() {
