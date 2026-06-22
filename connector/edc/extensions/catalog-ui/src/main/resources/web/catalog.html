@@ -222,7 +222,7 @@
         }
 
         function downloadAsset(assetId) {
-            window.location.href = BASE + '/api/assets/' + encodeURIComponent(assetId) + '/download';
+            window.location.href = BASE + '/api/download?assetId=' + encodeURIComponent(assetId);
         }
 
         async function load() {

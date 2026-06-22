@@ -280,9 +280,9 @@ public class CatalogUiController {
     }
 
     @GET
-    @Path("catalog/api/assets/{assetId}/download")
+    @Path("catalog/api/download")
     @Produces(MediaType.APPLICATION_OCTET_STREAM)
-    public Response downloadAsset(@PathParam("assetId") String assetId) {
+    public Response downloadAsset(@jakarta.ws.rs.QueryParam("assetId") String assetId) {
         try {
             var asset = assetIndex.findById(assetId);
             if (asset == null) {
