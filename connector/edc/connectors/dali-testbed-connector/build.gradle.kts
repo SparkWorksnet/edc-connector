@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":edc:extensions:minio-files-datasource"))
     implementation(project(":edc:extensions:minio-asset-transfer"))
     implementation(project(":edc:extensions:http-data-sink"))
+    implementation(project(":edc:extensions:catalog-ui"))
     implementation(project(":edc:extensions:piveau-data-sink"))
 
     implementation(libs.edc.runtime.core)

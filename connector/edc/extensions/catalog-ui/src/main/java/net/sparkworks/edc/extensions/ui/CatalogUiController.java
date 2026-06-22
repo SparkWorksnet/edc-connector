@@ -156,7 +156,7 @@ public class CatalogUiController {
         }
     }
 
-    private String getProperty(org.eclipse.edc.spi.types.domain.asset.Asset asset, String key) {
+    private String getProperty(org.eclipse.edc.connector.controlplane.asset.spi.domain.Asset asset, String key) {
         var val = asset.getProperty(key);
         return val != null ? val.toString() : "";
     }
