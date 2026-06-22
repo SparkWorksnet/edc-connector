@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>6G-DALI Data Space Catalogue</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        header { background: #1a237e; color: #fff; padding: 1.5rem 2rem; }
+        header h1 { font-size: 1.4rem; font-weight: 600; }
+        header p { font-size: 0.85rem; opacity: 0.8; margin-top: 0.3rem; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+        .tab { padding: 0.5rem 1.2rem; border: none; background: #e0e0e0; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+        .tab.active { background: #1a237e; color: #fff; }
+        .stats { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+        .stat-card { background: #fff; border-radius: 8px; padding: 1rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex: 1; }
+        .stat-card .label { font-size: 0.75rem; text-transform: uppercase; color: #888; }
+        .stat-card .value { font-size: 1.8rem; font-weight: 700; color: #1a237e; }
+        .search { margin-bottom: 1rem; }
+        .search input { width: 100%; padding: 0.7rem 1rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        th { background: #f0f0f0; text-align: left; padding: 0.75rem 1rem; font-size: 0.8rem; text-transform: uppercase; color: #666; }
+        td { padding: 0.75rem 1rem; border-top: 1px solid #eee; font-size: 0.85rem; word-break: break-all; }
+        tr:hover td { background: #f9f9ff; }
+        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .badge-minio { background: #e8f5e9; color: #2e7d32; }
+        .badge-http { background: #e3f2fd; color: #1565c0; }
+        .badge-other { background: #f3e5f5; color: #7b1fa2; }
+        .loading { text-align: center; padding: 3rem; color: #888; }
+        .error { text-align: center; padding: 2rem; color: #c62828; background: #ffebee; border-radius: 8px; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>6G-DALI Data Space Catalogue</h1>
+        <p id="connector-info">Loading...</p>
+    </header>
+    <div class="container">
+        <div class="stats">
+            <div class="stat-card"><div class="label">Assets</div><div class="value" id="asset-count">-</div></div>
+            <div class="stat-card"><div class="label">Contracts</div><div class="value" id="contract-count">-</div></div>
+            <div class="stat-card"><div class="label">Policies</div><div class="value" id="policy-count">-</div></div>
+        </div>
+        <div class="tabs">
+            <button class="tab active" onclick="showPanel('assets')">Assets</button>
+            <button class="tab" onclick="showPanel('contracts')">Contracts</button>
+            <button class="tab" onclick="showPanel('policies')">Policies</button>
+        </div>
+
+        <div id="assets-panel" class="panel active">
+            <div class="search"><input type="text" id="asset-search" placeholder="Filter assets..." oninput="filterAssets()"></div>
+            <div id="assets-table"><div class="loading">Loading assets...</div></div>
+        </div>
+
+        <div id="contracts-panel" class="panel">
+            <div id="contracts-table"><div class="loading">Loading contracts...</div></div>
+        </div>
+
+        <div id="policies-panel" class="panel">
+            <div id="policies-table"><div class="loading">Loading policies...</div></div>
+        </div>
+    </div>
+
+    <script>
+        const BASE = window.location.pathname.replace(/\/$/, '');
+        let allAssets = [];
+
+        function badgeClass(type) {
+            if (type && type.toLowerCase().includes('minio')) return 'badge-minio';
+            if (type && type.toLowerCase().includes('http')) return 'badge-http';
+            return 'badge-other';
+        }
+
+        function showPanel(name) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(name + '-panel').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function filterAssets() {
+            const q = document.getElementById('asset-search').value.toLowerCase();
+            const filtered = allAssets.filter(a =>
+                a.id.toLowerCase().includes(q) ||
+                (a.name && a.name.toLowerCase().includes(q)) ||
+                (a.contentType && a.contentType.toLowerCase().includes(q))
+            );
+            renderAssets(filtered);
+        }
+
+        function renderAssets(assets) {
+            if (assets.length === 0) {
+                document.getElementById('assets-table').innerHTML = '<div class="loading">No assets found</div>';
+                return;
+            }
+            let html = '<table><thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Source</th></tr></thead><tbody>';
+            for (const a of assets) {
+                const type = a.dataAddress ? a.dataAddress.type : '';
+                const source = a.dataAddress
+                    ? (a.dataAddress.prefix || a.dataAddress.baseUrl || '')
+                    : '';
+                const bucket = a.dataAddress && a.dataAddress.bucketName ? a.dataAddress.bucketName + '/' : '';
+                html += '<tr>';
+                html += '<td><strong>' + esc(a.name || a.id) + '</strong>';
+                if (a.contentType) html += '<br><span style="color:#888;font-size:0.75rem">' + esc(a.contentType) + '</span>';
+                html += '</td>';
+                html += '<td style="font-family:monospace;font-size:0.8rem">' + esc(a.id) + '</td>';
+                html += '<td><span class="badge ' + badgeClass(type) + '">' + esc(type) + '</span></td>';
+                html += '<td style="font-size:0.8rem;color:#555">' + esc(bucket + source) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('assets-table').innerHTML = html;
+        }
+
+        function esc(s) {
+            if (!s) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        async function load() {
+            try {
+                const [assetsRes, contractsRes, policiesRes] = await Promise.all([
+                    fetch(BASE + '/api/assets'),
+                    fetch(BASE + '/api/contracts'),
+                    fetch(BASE + '/api/policies')
+                ]);
+
+                allAssets = await assetsRes.json();
+                const contracts = await contractsRes.json();
+                const policies = await policiesRes.json();
+
+                document.getElementById('asset-count').textContent = allAssets.length;
+                document.getElementById('contract-count').textContent = contracts.length;
+                document.getElementById('policy-count').textContent = policies.length;
+                document.getElementById('connector-info').textContent = 'Connector at ' + window.location.host;
+
+                renderAssets(allAssets);
+
+                // Contracts table
+                if (contracts.length > 0) {
+                    let html = '<table><thead><tr><th>ID</th><th>Access Policy</th><th>Contract Policy</th></tr></thead><tbody>';
+                    for (const c of contracts) {
+                        html += '<tr><td style="font-family:monospace">' + esc(c.id) + '</td><td>' + esc(c.accessPolicyId) + '</td><td>' + esc(c.contractPolicyId) + '</td></tr>';
+                    }
+                    html += '</tbody></table>';
+                    document.getElementById('contracts-table').innerHTML = html;
+                } else {
+                    document.getElementById('contracts-table').innerHTML = '<div class="loading">No contract definitions</div>';
+                }
+
+                // Policies table
+                if (policies.length > 0) {
+                    let html = '<table><thead><tr><th>ID</th></tr></thead><tbody>';
+                    for (const p of policies) {
+                        html += '<tr><td style="font-family:monospace">' + esc(p.id) + '</td></tr>';
+                    }
+                    html += '</tbody></table>';
+                    document.getElementById('policies-table').innerHTML = html;
+                } else {
+                    document.getElementById('policies-table').innerHTML = '<div class="loading">No policies</div>';
+                }
+
+            } catch (e) {
+                document.getElementById('assets-table').innerHTML = '<div class="error">Failed to load: ' + e.message + '</div>';
+            }
+        }
+
+        load();
+    </script>
+</body>
+</html>
