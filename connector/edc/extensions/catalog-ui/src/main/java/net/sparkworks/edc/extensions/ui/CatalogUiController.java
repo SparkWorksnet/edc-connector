@@ -106,6 +106,23 @@ public class CatalogUiController {
                     sb.append(",\"baseUrl\":\"").append(escapeJson(baseUrl)).append("\"");
                 }
                 sb.append("}");
+
+                // All additional properties as metadata
+                sb.append(",\"metadata\":{");
+                var props = asset.getProperties();
+                boolean firstProp = true;
+                for (var entry : props.entrySet()) {
+                    String key = entry.getKey();
+                    // Skip already-serialized fields
+                    if ("name".equals(key) || "contenttype".equals(key) || "description".equals(key) || "id".equals(key)) {
+                        continue;
+                    }
+                    if (!firstProp) sb.append(",");
+                    firstProp = false;
+                    sb.append("\"").append(escapeJson(key)).append("\":\"").append(escapeJson(String.valueOf(entry.getValue()))).append("\"");
+                }
+                sb.append("}");
+
                 sb.append("}");
             }
             sb.append("]");
