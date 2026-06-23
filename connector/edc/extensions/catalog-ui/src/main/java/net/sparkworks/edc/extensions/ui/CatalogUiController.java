@@ -1,8 +1,10 @@
 package net.sparkworks.edc.extensions.ui;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -22,10 +24,16 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Path("/")
 public class CatalogUiController {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Set<String> SKIP_PROPS = Set.of("name", "contenttype", "description", "id");
+    private static final String EDC_NS = "https://w3id.org/edc/v0.0.1/ns/";
+    private static final DateTimeFormatter UTC_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("UTC"));
 
     private final AssetIndex assetIndex;
     private final ContractDefinitionStore contractDefinitionStore;
@@ -75,62 +83,41 @@ public class CatalogUiController {
             var query = QuerySpec.Builder.newInstance().build();
             var assets = assetIndex.queryAssets(query).collect(Collectors.toList());
 
-            var sb = new StringBuilder("[");
-            boolean first = true;
+            ArrayNode arr = MAPPER.createArrayNode();
             for (var asset : assets) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("{");
-                sb.append("\"id\":\"").append(escapeJson(asset.getId())).append("\",");
-                sb.append("\"name\":\"").append(escapeJson(asset.getName() != null ? asset.getName() : asset.getId())).append("\",");
-                sb.append("\"contentType\":\"").append(escapeJson(getProperty(asset, "contenttype"))).append("\",");
-                sb.append("\"description\":\"").append(escapeJson(getProperty(asset, "description"))).append("\",");
+                ObjectNode node = MAPPER.createObjectNode();
+                node.put("id", asset.getId());
+                node.put("name", asset.getName() != null ? asset.getName() : asset.getId());
+                node.put("contentType", getProperty(asset, "contenttype"));
+                node.put("description", getProperty(asset, "description"));
 
                 var da = asset.getDataAddress();
-                sb.append("\"dataAddress\":{");
-                sb.append("\"type\":\"").append(escapeJson(da.getType())).append("\"");
-                var bucket = da.getStringProperty("bucketName");
-                if (bucket != null) {
-                    sb.append(",\"bucketName\":\"").append(escapeJson(bucket)).append("\"");
-                }
-                var prefix = da.getStringProperty("prefix");
-                if (prefix != null) {
-                    sb.append(",\"prefix\":\"").append(escapeJson(prefix)).append("\"");
-                }
-                var endpoint = da.getStringProperty("endpoint");
-                if (endpoint != null) {
-                    sb.append(",\"endpoint\":\"").append(escapeJson(endpoint)).append("\"");
-                }
-                var baseUrl = da.getStringProperty("baseUrl");
-                if (baseUrl != null) {
-                    sb.append(",\"baseUrl\":\"").append(escapeJson(baseUrl)).append("\"");
-                }
-                sb.append("}");
+                ObjectNode daNode = MAPPER.createObjectNode();
+                daNode.put("type", da.getType());
+                putIfPresent(daNode, "bucketName", da.getStringProperty("bucketName"));
+                putIfPresent(daNode, "prefix", da.getStringProperty("prefix"));
+                putIfPresent(daNode, "endpoint", da.getStringProperty("endpoint"));
+                putIfPresent(daNode, "baseUrl", da.getStringProperty("baseUrl"));
+                node.set("dataAddress", daNode);
 
-                // All additional properties as metadata
-                sb.append(",\"metadata\":{");
-                var props = asset.getProperties();
-                boolean firstProp = true;
-                for (var entry : props.entrySet()) {
+                ObjectNode meta = MAPPER.createObjectNode();
+                for (var entry : asset.getProperties().entrySet()) {
                     String key = entry.getKey();
-                    // Skip already-serialized fields
-                    if ("name".equals(key) || "contenttype".equals(key) || "description".equals(key) || "id".equals(key)) {
-                        continue;
+                    if (key.startsWith(EDC_NS)) {
+                        key = key.substring(EDC_NS.length());
                     }
-                    if (!firstProp) sb.append(",");
-                    firstProp = false;
-                    sb.append("\"").append(escapeJson(key)).append("\":\"").append(escapeJson(String.valueOf(entry.getValue()))).append("\"");
+                    if (SKIP_PROPS.contains(key)) continue;
+                    meta.put(key, String.valueOf(entry.getValue()));
                 }
-                sb.append("}");
+                node.set("metadata", meta);
 
-                sb.append("}");
+                arr.add(node);
             }
-            sb.append("]");
 
-            return Response.ok(sb.toString()).build();
+            return Response.ok(MAPPER.writeValueAsString(arr)).build();
         } catch (Exception e) {
             monitor.severe("Failed to list assets", e);
-            return Response.serverError().entity("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}").build();
+            return jsonError(e);
         }
     }
 
@@ -142,23 +129,19 @@ public class CatalogUiController {
             var query = QuerySpec.Builder.newInstance().build();
             var defs = contractDefinitionStore.findAll(query).collect(Collectors.toList());
 
-            var sb = new StringBuilder("[");
-            boolean first = true;
+            ArrayNode arr = MAPPER.createArrayNode();
             for (var def : defs) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("{");
-                sb.append("\"id\":\"").append(escapeJson(def.getId())).append("\",");
-                sb.append("\"accessPolicyId\":\"").append(escapeJson(def.getAccessPolicyId())).append("\",");
-                sb.append("\"contractPolicyId\":\"").append(escapeJson(def.getContractPolicyId())).append("\"");
-                sb.append("}");
+                ObjectNode node = MAPPER.createObjectNode();
+                node.put("id", def.getId());
+                node.put("accessPolicyId", def.getAccessPolicyId());
+                node.put("contractPolicyId", def.getContractPolicyId());
+                arr.add(node);
             }
-            sb.append("]");
 
-            return Response.ok(sb.toString()).build();
+            return Response.ok(MAPPER.writeValueAsString(arr)).build();
         } catch (Exception e) {
             monitor.severe("Failed to list contract definitions", e);
-            return Response.serverError().entity("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}").build();
+            return jsonError(e);
         }
     }
 
@@ -170,21 +153,17 @@ public class CatalogUiController {
             var query = QuerySpec.Builder.newInstance().build();
             var policies = policyDefinitionStore.findAll(query).collect(Collectors.toList());
 
-            var sb = new StringBuilder("[");
-            boolean first = true;
+            ArrayNode arr = MAPPER.createArrayNode();
             for (var policy : policies) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("{");
-                sb.append("\"id\":\"").append(escapeJson(policy.getId())).append("\"");
-                sb.append("}");
+                ObjectNode node = MAPPER.createObjectNode();
+                node.put("id", policy.getId());
+                arr.add(node);
             }
-            sb.append("]");
 
-            return Response.ok(sb.toString()).build();
+            return Response.ok(MAPPER.writeValueAsString(arr)).build();
         } catch (Exception e) {
             monitor.severe("Failed to list policies", e);
-            return Response.serverError().entity("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}").build();
+            return jsonError(e);
         }
     }
 
@@ -196,29 +175,24 @@ public class CatalogUiController {
             var query = QuerySpec.Builder.newInstance().build();
             var result = contractAgreementService.search(query);
             if (result.failed()) {
-                return Response.serverError().entity("{\"error\":\"" + escapeJson(result.getFailureDetail()) + "\"}").build();
+                return Response.serverError().entity("{\"error\":\"" + result.getFailureDetail() + "\"}").build();
             }
 
-            var agreements = result.getContent();
-            var sb = new StringBuilder("[");
-            boolean first = true;
-            for (var agreement : agreements) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("{");
-                sb.append("\"id\":\"").append(escapeJson(agreement.getId())).append("\",");
-                sb.append("\"assetId\":\"").append(escapeJson(agreement.getAssetId())).append("\",");
-                sb.append("\"providerId\":\"").append(escapeJson(agreement.getProviderId())).append("\",");
-                sb.append("\"consumerId\":\"").append(escapeJson(agreement.getConsumerId())).append("\",");
-                sb.append("\"signingDate\":\"").append(formatEpoch(agreement.getContractSigningDate())).append("\"");
-                sb.append("}");
+            ArrayNode arr = MAPPER.createArrayNode();
+            for (var agreement : result.getContent()) {
+                ObjectNode node = MAPPER.createObjectNode();
+                node.put("id", agreement.getId());
+                node.put("assetId", agreement.getAssetId());
+                node.put("providerId", agreement.getProviderId());
+                node.put("consumerId", agreement.getConsumerId());
+                node.put("signingDate", formatEpoch(agreement.getContractSigningDate()));
+                arr.add(node);
             }
-            sb.append("]");
 
-            return Response.ok(sb.toString()).build();
+            return Response.ok(MAPPER.writeValueAsString(arr)).build();
         } catch (Exception e) {
             monitor.severe("Failed to list agreements", e);
-            return Response.serverError().entity("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}").build();
+            return jsonError(e);
         }
     }
 
@@ -230,32 +204,27 @@ public class CatalogUiController {
             var query = QuerySpec.Builder.newInstance().build();
             var result = contractNegotiationService.search(query);
             if (result.failed()) {
-                return Response.serverError().entity("{\"error\":\"" + escapeJson(result.getFailureDetail()) + "\"}").build();
+                return Response.serverError().entity("{\"error\":\"" + result.getFailureDetail() + "\"}").build();
             }
 
-            var negotiations = result.getContent();
-            var sb = new StringBuilder("[");
-            boolean first = true;
-            for (var neg : negotiations) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("{");
-                sb.append("\"id\":\"").append(escapeJson(neg.getId())).append("\",");
-                sb.append("\"state\":\"").append(escapeJson(neg.stateAsString())).append("\",");
-                sb.append("\"type\":\"").append(escapeJson(neg.getType().name())).append("\",");
-                sb.append("\"counterPartyId\":\"").append(escapeJson(neg.getCounterPartyId())).append("\",");
-                sb.append("\"counterPartyAddress\":\"").append(escapeJson(neg.getCounterPartyAddress())).append("\",");
-                sb.append("\"protocol\":\"").append(escapeJson(neg.getProtocol())).append("\",");
+            ArrayNode arr = MAPPER.createArrayNode();
+            for (var neg : result.getContent()) {
+                ObjectNode node = MAPPER.createObjectNode();
+                node.put("id", neg.getId());
+                node.put("state", neg.stateAsString());
+                node.put("type", neg.getType().name());
+                node.put("counterPartyId", neg.getCounterPartyId());
+                node.put("counterPartyAddress", neg.getCounterPartyAddress());
+                node.put("protocol", neg.getProtocol());
                 var agreement = neg.getContractAgreement();
-                sb.append("\"agreementId\":\"").append(agreement != null ? escapeJson(agreement.getId()) : "").append("\"");
-                sb.append("}");
+                node.put("agreementId", agreement != null ? agreement.getId() : "");
+                arr.add(node);
             }
-            sb.append("]");
 
-            return Response.ok(sb.toString()).build();
+            return Response.ok(MAPPER.writeValueAsString(arr)).build();
         } catch (Exception e) {
             monitor.severe("Failed to list negotiations", e);
-            return Response.serverError().entity("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}").build();
+            return jsonError(e);
         }
     }
 
@@ -267,33 +236,28 @@ public class CatalogUiController {
             var query = QuerySpec.Builder.newInstance().build();
             var result = transferProcessService.search(query);
             if (result.failed()) {
-                return Response.serverError().entity("{\"error\":\"" + escapeJson(result.getFailureDetail()) + "\"}").build();
+                return Response.serverError().entity("{\"error\":\"" + result.getFailureDetail() + "\"}").build();
             }
 
-            var transfers = result.getContent();
-            var sb = new StringBuilder("[");
-            boolean first = true;
-            for (var tp : transfers) {
-                if (!first) sb.append(",");
-                first = false;
-                sb.append("{");
-                sb.append("\"id\":\"").append(escapeJson(tp.getId())).append("\",");
-                sb.append("\"state\":\"").append(escapeJson(tp.stateAsString())).append("\",");
-                sb.append("\"type\":\"").append(escapeJson(tp.getType().name())).append("\",");
-                sb.append("\"assetId\":\"").append(escapeJson(tp.getAssetId())).append("\",");
-                sb.append("\"contractId\":\"").append(escapeJson(tp.getContractId())).append("\",");
-                sb.append("\"transferType\":\"").append(escapeJson(tp.getTransferType())).append("\",");
-                sb.append("\"counterPartyAddress\":\"").append(escapeJson(tp.getCounterPartyAddress())).append("\",");
-                sb.append("\"destinationType\":\"").append(escapeJson(tp.getDestinationType())).append("\",");
-                sb.append("\"stateTimestamp\":\"").append(formatEpochMillis(tp.getStateTimestamp())).append("\"");
-                sb.append("}");
+            ArrayNode arr = MAPPER.createArrayNode();
+            for (var tp : result.getContent()) {
+                ObjectNode node = MAPPER.createObjectNode();
+                node.put("id", tp.getId());
+                node.put("state", tp.stateAsString());
+                node.put("type", tp.getType().name());
+                node.put("assetId", tp.getAssetId());
+                node.put("contractId", tp.getContractId());
+                node.put("transferType", tp.getTransferType());
+                node.put("counterPartyAddress", tp.getCounterPartyAddress());
+                node.put("destinationType", tp.getDestinationType());
+                node.put("stateTimestamp", formatEpochMillis(tp.getStateTimestamp()));
+                arr.add(node);
             }
-            sb.append("]");
 
-            return Response.ok(sb.toString()).build();
+            return Response.ok(MAPPER.writeValueAsString(arr)).build();
         } catch (Exception e) {
             monitor.severe("Failed to list transfers", e);
-            return Response.serverError().entity("{\"error\":\"" + escapeJson(e.getMessage()) + "\"}").build();
+            return jsonError(e);
         }
     }
 
@@ -352,26 +316,29 @@ public class CatalogUiController {
         return val != null ? val.toString() : "";
     }
 
+    private void putIfPresent(ObjectNode node, String key, String value) {
+        if (value != null) {
+            node.put(key, value);
+        }
+    }
+
     private String formatEpoch(long epochSeconds) {
         if (epochSeconds <= 0) return "";
-        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                .withZone(ZoneId.of("UTC"))
-                .format(Instant.ofEpochSecond(epochSeconds));
+        return UTC_FMT.format(Instant.ofEpochSecond(epochSeconds));
     }
 
     private String formatEpochMillis(long epochMillis) {
         if (epochMillis <= 0) return "";
-        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                .withZone(ZoneId.of("UTC"))
-                .format(Instant.ofEpochMilli(epochMillis));
+        return UTC_FMT.format(Instant.ofEpochMilli(epochMillis));
     }
 
-    private String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+    private Response jsonError(Exception e) {
+        try {
+            ObjectNode err = MAPPER.createObjectNode();
+            err.put("error", e.getMessage());
+            return Response.serverError().entity(MAPPER.writeValueAsString(err)).build();
+        } catch (Exception ex) {
+            return Response.serverError().entity("{\"error\":\"internal error\"}").build();
+        }
     }
 }

@@ -134,11 +134,11 @@
                 'Other': []
             };
             for (const [key, val] of Object.entries(metadata)) {
-                if (key.startsWith('dct:') || key.startsWith('dcat:') || key.startsWith('adms:')) {
+                if (key.startsWith('dct.') || key.startsWith('dcat.') || key.startsWith('adms.') || key.startsWith('dct:') || key.startsWith('dcat:') || key.startsWith('adms:')) {
                     sections['DCAT-AP'].push([key, val]);
-                } else if (key.startsWith('dali:') || key.startsWith('schema:') || key.startsWith('gax:')) {
+                } else if (key.startsWith('dali.') || key.startsWith('schema.') || key.startsWith('gax.') || key.startsWith('dali:') || key.startsWith('schema:') || key.startsWith('gax:')) {
                     sections['6G-DALI MAP'].push([key, val]);
-                } else if (key.startsWith('prov:')) {
+                } else if (key.startsWith('prov.') || key.startsWith('prov:')) {
                     sections['Provenance'].push([key, val]);
                 } else {
                     sections['Other'].push([key, val]);

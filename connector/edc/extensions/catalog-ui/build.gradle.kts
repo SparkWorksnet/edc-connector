@@ -9,5 +9,6 @@ dependencies {
     implementation(libs.edc.runtime.metamodel)
     implementation(libs.edc.web.spi)
     implementation(libs.jakarta.rsApi)
+    implementation(libs.jackson.databind)
     implementation(libs.minio.io)
 }
