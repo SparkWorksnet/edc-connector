@@ -63,14 +63,25 @@ public class CatalogUiController {
     @Path("catalog")
     @Produces(MediaType.TEXT_HTML)
     public Response catalogPage() {
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream("web/catalog.html")) {
+        return servePage("web/catalog.html");
+    }
+
+    @GET
+    @Path("catalog/submit")
+    @Produces(MediaType.TEXT_HTML)
+    public Response submitPage() {
+        return servePage("web/submit-dataset.html");
+    }
+
+    private Response servePage(String resource) {
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream(resource)) {
             if (is == null) {
-                return Response.status(404).entity("catalog.html not found").build();
+                return Response.status(404).entity(resource + " not found").build();
             }
             String html = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             return Response.ok(html).build();
         } catch (Exception e) {
-            monitor.severe("Failed to serve catalog page", e);
+            monitor.severe("Failed to serve " + resource, e);
             return Response.serverError().entity("Error loading page").build();
         }
     }
