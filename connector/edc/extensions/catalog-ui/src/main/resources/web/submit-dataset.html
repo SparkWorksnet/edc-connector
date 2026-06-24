@@ -153,6 +153,18 @@
       color: #0a2a4a; margin-bottom: 16px; line-height: 1.5;
     }
 
+    /* ── Per-column check grid ── */
+    .col-check-grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .col-check-grid th { background: #eaf0f7; padding: 8px 10px; text-align: center; font-weight: 600; color: #374151; border: 1px solid #d0d9e8; }
+    .col-check-grid th:first-child { text-align: left; }
+    .col-check-grid td { padding: 6px 10px; border: 1px solid #d0d9e8; text-align: center; }
+    .col-check-grid td:first-child { text-align: left; font-family: monospace; font-weight: 600; color: #1a237e; }
+    .col-check-grid tr:hover td { background: #f0f4fb; }
+    .col-check-grid input[type="checkbox"] { width: 16px; height: 16px; accent-color: #1a237e; }
+    .col-check-grid select { font-size: 11px; padding: 2px 4px; border: 1px solid #cdd5e0; border-radius: 3px; }
+    .added-check { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+    .added-check .remove-btn { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 16px; padding: 0 4px; }
+
     /* ── Review summary ── */
     .review-section { margin-bottom: 24px; }
     .review-section h3 {
@@ -455,7 +467,22 @@
             <p class="formats">Accepted: CSV · TSV · Parquet · ORC · ZIP (containing the above)</p>
             <p class="upload-limit">Maximum file size: 1 GB</p>
           </div>
-          <input id="file-input" type="file" accept=".csv,.tsv,.parquet,.orc,.zip" multiple style="display:none" aria-label="Upload dataset file" />
+          <input id="file-input" type="file" accept=".csv,.tsv,.parquet,.orc,.zip" multiple style="display:none" aria-label="Upload dataset file" onchange="previewFile(this)" />
+          <div id="file-preview" style="display:none; margin-top:16px;">
+            <div class="info-box">
+              <strong id="preview-filename"></strong> <span id="preview-filesize" class="hint"></span>
+            </div>
+            <div style="margin-bottom:8px;">
+              <label style="font-size:12px;font-weight:600;color:#374151;">Detected Columns</label>
+              <div id="preview-columns" style="margin-top:4px;"></div>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#374151;">Data Preview (first 5 rows)</label>
+              <div style="overflow-x:auto; margin-top:4px;">
+                <table id="preview-table" style="font-size:12px;"></table>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="tab-panel" id="tab-link">
@@ -495,181 +522,98 @@
   <!-- ═══════════════════════════════════════════ STEP 3 — Quality Checks -->
   <div class="wizard-step" id="step-3">
 
+    <!-- Table-level checks -->
     <div class="card">
       <div class="card-header">
-        <h2>Data Quality Checks</h2>
-        <span class="badge badge-optional">Optional</span>
+        <h2>Table-Level Checks</h2>
+        <span class="badge badge-recommended">Recommended</span>
       </div>
       <div class="card-body">
-        <div class="info-box">
-          Select the quality rules you want to enforce on your dataset. The validation pipeline will evaluate each
-          enabled rule and include the results in your dataset's description in the Staging Catalogue.
-          Rules that fail will be reported; only critical failures block promotion to the Community Datasets Catalogue.
-        </div>
-
         <div class="expectation-list">
-
-          <!-- ── Compulsory checks (always on) ── -->
-          <div class="expectation-item mandatory">
-            <input type="checkbox" id="chk-notnull" checked disabled aria-label="ExpectColumnValuesToNotBeNull" />
-            <div>
-              <div class="exp-name">ExpectColumnValuesToNotBeNull <span class="badge-compulsory">Compulsory</span></div>
-              <div class="exp-desc">A column must contain no null values. This check is always enforced.</div>
-            </div>
-            <div class="exp-params">
-              <label for="notnull-col">Column</label>
-              <input type="text" id="notnull-col" placeholder="column name" />
-            </div>
-          </div>
-
-          <div class="expectation-item" id="item-colexist">
-            <input type="checkbox" id="chk-colexist" checked aria-label="ExpectColumnToExist" />
-            <div>
-              <div class="exp-name">ExpectColumnToExist <span class="badge-compulsory" id="badge-colexist" style="display:none">Compulsory</span></div>
-              <div class="exp-desc" id="desc-colexist">A named column must be present in the dataset.</div>
-            </div>
-            <div class="exp-params">
-              <label for="colexist-col">Column</label>
-              <input type="text" id="colexist-col" placeholder="column name" />
-            </div>
-          </div>
-
-          <!-- ── Optional checks ── -->
           <div class="expectation-item">
-            <input type="checkbox" id="chk-rowcount" checked aria-label="ExpectTableRowCountToBeBetween" />
+            <input type="checkbox" id="chk-rowcount" checked />
             <div>
               <div class="exp-name">ExpectTableRowCountToBeBetween</div>
               <div class="exp-desc">Total number of rows falls within the specified range.</div>
             </div>
             <div class="exp-params">
-              <label for="rowcount-min">Min</label>
-              <input type="text" id="rowcount-min" placeholder="100" />
-              <label for="rowcount-max">Max</label>
-              <input type="text" id="rowcount-max" placeholder="1000000" />
+              <label>Min</label><input type="text" id="rowcount-min" value="1" />
+              <label>Max</label><input type="text" id="rowcount-max" placeholder="1000000" />
             </div>
           </div>
-
           <div class="expectation-item">
-            <input type="checkbox" id="chk-colcount" aria-label="ExpectTableColumnCountToBeBetween" />
-            <div>
-              <div class="exp-name">ExpectTableColumnCountToBeBetween</div>
-              <div class="exp-desc">Total number of columns falls within the specified range.</div>
-            </div>
-            <div class="exp-params">
-              <label for="colcount-min">Min</label>
-              <input type="text" id="colcount-min" placeholder="3" />
-              <label for="colcount-max">Max</label>
-              <input type="text" id="colcount-max" placeholder="50" />
-            </div>
-          </div>
-
-          <div class="expectation-item">
-            <input type="checkbox" id="chk-colorder" checked aria-label="ExpectTableColumnsToMatchOrderedList" />
+            <input type="checkbox" id="chk-colorder" checked />
             <div>
               <div class="exp-name">ExpectTableColumnsToMatchOrderedList</div>
-              <div class="exp-desc">Columns appear in the specified order with the specified names.</div>
+              <div class="exp-desc">Columns appear in the specified order.</div>
             </div>
             <div class="exp-params">
-              <label for="colorder-list">Columns</label>
-              <input type="text" id="colorder-list" placeholder="col1, col2, col3" style="width:230px" />
+              <label>Columns</label><input type="text" id="colorder-list" style="width:300px" />
             </div>
           </div>
-
-          <div class="expectation-item">
-            <input type="checkbox" id="chk-allnull" aria-label="ExpectColumnValuesToBeNull" />
-            <div>
-              <div class="exp-name">ExpectColumnValuesToBeNull</div>
-              <div class="exp-desc">A column must contain only null values.</div>
-            </div>
-            <div class="exp-params">
-              <label for="allnull-col">Column</label>
-              <input type="text" id="allnull-col" placeholder="column name" />
-            </div>
-          </div>
-
-          <div class="expectation-item">
-            <input type="checkbox" id="chk-type" checked aria-label="ExpectColumnValuesToBeOfType" />
-            <div>
-              <div class="exp-name">ExpectColumnValuesToBeOfType</div>
-              <div class="exp-desc">All values in a column must be of the specified data type.</div>
-            </div>
-            <div class="exp-params">
-              <label for="type-col">Column</label>
-              <input type="text" id="type-col" placeholder="column name" />
-              <label for="type-sel">Type</label>
-              <select id="type-sel" style="width:90px;font-size:12px;padding:4px 6px;">
-                <option selected>float</option>
-                <option>int</option>
-                <option>str</option>
-                <option>bool</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="expectation-item">
-            <input type="checkbox" id="chk-inset" aria-label="ExpectColumnValuesToBeInSet" />
-            <div>
-              <div class="exp-name">ExpectColumnValuesToBeInSet</div>
-              <div class="exp-desc">All values in a column must belong to the defined set of allowed values.</div>
-            </div>
-            <div class="exp-params">
-              <label for="inset-col">Column</label>
-              <input type="text" id="inset-col" placeholder="column name" />
-              <label for="inset-vals">Values</label>
-              <input type="text" id="inset-vals" placeholder="val1, val2, …" style="width:140px" />
-            </div>
-          </div>
-
-          <div class="expectation-item">
-            <input type="checkbox" id="chk-notinset" aria-label="ExpectColumnValuesToNotBeInSet" />
-            <div>
-              <div class="exp-name">ExpectColumnValuesToNotBeInSet</div>
-              <div class="exp-desc">No values in a column may belong to the defined set of disallowed values.</div>
-            </div>
-            <div class="exp-params">
-              <label for="notinset-col">Column</label>
-              <input type="text" id="notinset-col" placeholder="column name" />
-              <label for="notinset-vals">Values</label>
-              <input type="text" id="notinset-vals" placeholder="val1, val2, …" style="width:140px" />
-            </div>
-          </div>
-
-          <div class="expectation-item">
-            <input type="checkbox" id="chk-between" checked aria-label="ExpectColumnValuesToBeBetween" />
-            <div>
-              <div class="exp-name">ExpectColumnValuesToBeBetween</div>
-              <div class="exp-desc">All values in a column fall within the specified numeric range.</div>
-            </div>
-            <div class="exp-params">
-              <label for="between-col">Column</label>
-              <input type="text" id="between-col" placeholder="column name" />
-              <label for="between-min">Min</label>
-              <input type="text" id="between-min" placeholder="-140" />
-              <label for="between-max">Max</label>
-              <input type="text" id="between-max" placeholder="-44" />
-            </div>
-          </div>
-
-          <div class="expectation-item">
-            <input type="checkbox" id="chk-date" checked aria-label="ExpectColumnValuesToBeDateutilParseable" />
-            <div>
-              <div class="exp-name">ExpectColumnValuesToBeDateutilParseable</div>
-              <div class="exp-desc">All values in a column can be parsed as valid dates.</div>
-            </div>
-            <div class="exp-params">
-              <label for="date-col">Column</label>
-              <input type="text" id="date-col" placeholder="column name" />
-            </div>
-          </div>
-
         </div>
+      </div>
+    </div>
+
+    <!-- Auto checks per column -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Per-Column Checks</h2>
+        <span class="badge badge-mandatory">Auto-generated</span>
+      </div>
+      <div class="card-body">
+        <div class="info-box">
+          These checks are generated for every column detected in your file.
+          Toggle individual checks per column using the checkboxes.
+        </div>
+        <div id="per-column-checks">
+          <span class="hint">Upload a CSV/TSV file in Step 2 to auto-detect columns, or enter them manually below.</span>
+        </div>
+        <div style="margin-top:12px">
+          <label for="manual-columns" style="font-size:12px;font-weight:600;">Columns (comma-separated)</label>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <input id="manual-columns" type="text" placeholder="col1, col2, col3" style="flex:1" />
+            <button class="btn btn-secondary" onclick="rebuildColumnChecks()" style="white-space:nowrap">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Additional column checks (user-added) -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Additional Column Checks</h2>
+        <span class="badge badge-optional">Optional</span>
+      </div>
+      <div class="card-body">
+        <div class="info-box">
+          Add specific checks for individual columns. Select a check type, choose a column, configure parameters, then click Add.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;border:1px solid #d0d9e8;border-radius:6px;padding:12px;">
+          <div class="field" style="min-width:220px">
+            <label>Check Type</label>
+            <select id="add-check-type" onchange="updateAddCheckParams()" style="font-size:13px">
+              <option value="between">ExpectColumnValuesToBeBetween</option>
+              <option value="date">ExpectColumnValuesToBeDateutilParseable</option>
+              <option value="inset">ExpectColumnValuesToBeInSet</option>
+              <option value="notinset">ExpectColumnValuesToNotBeInSet</option>
+              <option value="allnull">ExpectColumnValuesToBeNull</option>
+            </select>
+          </div>
+          <div class="field" style="min-width:140px">
+            <label>Column</label>
+            <select id="add-check-col" style="font-size:13px"></select>
+          </div>
+          <div id="add-check-extra" style="display:flex;gap:8px;align-items:flex-end;"></div>
+          <button class="btn btn-primary" onclick="addColumnCheck()" style="height:34px">+ Add</button>
+        </div>
+        <div class="expectation-list" id="additional-checks"></div>
       </div>
     </div>
 
     <div class="action-bar">
       <button class="btn btn-secondary" onclick="goTo(2)">← Back</button>
       <div style="display:flex;gap:12px;align-items:center">
-
         <button class="btn btn-primary" onclick="goTo(4)">Continue to Review →</button>
       </div>
     </div>
@@ -750,12 +694,23 @@
     var dataMethod = fileInput.files.length > 0 ? 'File upload' : (rv('data-url') ? 'URL' : '—');
     var dataDetail = fileInput.files.length > 0 ? fileInput.files[0].name : (rv('data-url') || '—');
 
-    var checks = [];
-    document.querySelectorAll('.expectation-item input[type="checkbox"]:checked').forEach(function(cb) {
-      var name = cb.closest('.expectation-item').querySelector('.exp-name');
-      if (name) checks.push(name.textContent.replace('Compulsory','').trim());
-    });
-    var checksHtml = checks.map(function(c) { return '<span class="review-check">' + c + '</span>'; }).join(' ') || '—';
+    var allChecks = getQualityChecks();
+    var checkSummary = {};
+    for (var ci = 0; ci < allChecks.length; ci++) {
+      var ck = allChecks[ci];
+      var label = ck.name || ck.check;
+      if (ck.col) label += ' (' + ck.col + ')';
+      if (!checkSummary[ck.check || ck.type]) checkSummary[ck.check || ck.type] = [];
+      checkSummary[ck.check || ck.type].push(label);
+    }
+    var checksHtml = '';
+    for (var ckType in checkSummary) {
+      var items = checkSummary[ckType];
+      checksHtml += '<div style="margin-bottom:4px"><strong style="font-size:11px;text-transform:uppercase;color:#374151">' + ckType + '</strong> (' + items.length + ')<br>';
+      checksHtml += items.map(function(i) { return '<span class="review-check">' + i + '</span>'; }).join(' ');
+      checksHtml += '</div>';
+    }
+    if (!checksHtml) checksHtml = '—';
 
     var html = '<div class="review-section"><h3>Metadata</h3><div class="review-grid">'
       + '<span class="review-key">Title</span><span class="review-val">' + (rv('title') || '—') + '</span>'
@@ -789,40 +744,195 @@
     });
   }
 
-  // Sync Step 1 columns field → Step 3 ExpectTableColumnsToMatchOrderedList
+  // ── Quality checks: per-column grid ────────────────────────────────────
+  var detectedColumns = [];
+  var additionalChecks = [];
+
   function syncColumns() {
-    const val = document.getElementById('columns').value;
-    document.getElementById('colorder-list').value = val;
-    updateColExistCompulsory();
+    var val = document.getElementById('columns').value;
+    var orderList = document.getElementById('colorder-list');
+    if (orderList) orderList.value = val;
   }
 
-  // Promote ExpectColumnToExist to compulsory when column names are specified
-  function updateColExistCompulsory() {
-    const hasColumns = document.getElementById('columns').value.trim().length > 0
-                    || document.getElementById('colorder-list').value.trim().length > 0;
-    const item  = document.getElementById('item-colexist');
-    const chk   = document.getElementById('chk-colexist');
-    const badge = document.getElementById('badge-colexist');
-    const desc  = document.getElementById('desc-colexist');
+  function readCurrentGridState() {
+    var state = {};
+    document.querySelectorAll('.col-check-grid select[data-check="type"]').forEach(function(sel) {
+      var col = sel.dataset.col;
+      if (!state[col]) state[col] = {};
+      state[col].type = sel.value;
+    });
+    document.querySelectorAll('.col-check-grid input[type="checkbox"]').forEach(function(cb) {
+      var col = cb.dataset.col;
+      if (!state[col]) state[col] = {};
+      state[col][cb.dataset.check] = cb.checked;
+    });
+    return state;
+  }
 
-    if (hasColumns) {
-      item.classList.add('mandatory');
-      chk.checked  = true;
-      chk.disabled = true;
-      badge.style.display = '';
-      desc.textContent = 'A named column must be present in the dataset. Compulsory because column names were specified in Dataset Details.';
-    } else {
-      item.classList.remove('mandatory');
-      chk.disabled = false;
-      badge.style.display = 'none';
-      desc.textContent = 'A named column must be present in the dataset.';
+  function rebuildColumnChecks() {
+    var input = document.getElementById('manual-columns').value;
+    var cols = input.split(',').map(function(c) { return c.trim(); }).filter(Boolean);
+    var gridState = readCurrentGridState();
+    detectedColumns = cols.map(function(c) {
+      var prev = gridState[c];
+      var existing = detectedColumns.find(function(d) { return d.name === c; });
+      return {
+        name: c,
+        type: prev ? prev.type : (existing ? existing.type : 'str'),
+        exist: prev ? prev.exist : true,
+        notnull: prev ? prev.notnull : true
+      };
+    });
+    buildColumnChecks(detectedColumns);
+    var colField = document.getElementById('columns');
+    if (colField) colField.value = cols.join(', ');
+    syncColumns();
+  }
+
+  function buildColumnChecks(columns) {
+    var container = document.getElementById('per-column-checks');
+    if (!columns || columns.length === 0) {
+      container.innerHTML = '<span class="hint">No columns detected. Upload a file or enter columns manually.</span>';
+      updateAddCheckColSelector([]);
+      return;
     }
+
+    var html = '<table class="col-check-grid"><thead><tr>'
+      + '<th>Column</th>'
+      + '<th>Exists</th>'
+      + '<th>Not Null</th>'
+      + '<th>Type</th>'
+      + '</tr></thead><tbody>';
+
+    for (var i = 0; i < columns.length; i++) {
+      var col = columns[i];
+      html += '<tr>';
+      var existChecked = col.exist !== false ? ' checked' : '';
+      var notnullChecked = col.notnull !== false ? ' checked' : '';
+      html += '<td>' + col.name + '</td>';
+      html += '<td><input type="checkbox"' + existChecked + ' data-check="exist" data-col="' + col.name + '" /></td>';
+      html += '<td><input type="checkbox"' + notnullChecked + ' data-check="notnull" data-col="' + col.name + '" /></td>';
+      html += '<td><select data-check="type" data-col="' + col.name + '" style="width:70px">';
+      var types = ['str', 'float', 'int', 'bool', 'date'];
+      for (var t = 0; t < types.length; t++) {
+        var sel = types[t] === col.type ? ' selected' : '';
+        html += '<option' + sel + '>' + types[t] + '</option>';
+      }
+      html += '</select></td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+
+    // Sync to manual input and column order list
+    var names = columns.map(function(c) { return c.name; });
+    document.getElementById('manual-columns').value = names.join(', ');
+    var orderList = document.getElementById('colorder-list');
+    if (orderList) orderList.value = names.join(', ');
+
+    updateAddCheckColSelector(names);
+  }
+
+  function updateAddCheckColSelector(columns) {
+    var sel = document.getElementById('add-check-col');
+    sel.innerHTML = '';
+    for (var i = 0; i < columns.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = columns[i];
+      opt.textContent = columns[i];
+      sel.appendChild(opt);
+    }
+    updateAddCheckParams();
+  }
+
+  function updateAddCheckParams() {
+    var type = document.getElementById('add-check-type').value;
+    var extra = document.getElementById('add-check-extra');
+    if (type === 'between') {
+      extra.innerHTML = '<div class="field"><label>Min</label><input type="text" id="add-param-min" style="width:80px" /></div>'
+        + '<div class="field"><label>Max</label><input type="text" id="add-param-max" style="width:80px" /></div>';
+    } else if (type === 'inset' || type === 'notinset') {
+      extra.innerHTML = '<div class="field"><label>Values</label><input type="text" id="add-param-vals" placeholder="val1, val2, ..." style="width:180px" /></div>';
+    } else {
+      extra.innerHTML = '';
+    }
+  }
+
+  var checkCounter = 0;
+  function addColumnCheck() {
+    var type = document.getElementById('add-check-type').value;
+    var col = document.getElementById('add-check-col').value;
+    if (!col) return;
+
+    var checkNames = {
+      between: 'ExpectColumnValuesToBeBetween',
+      date: 'ExpectColumnValuesToBeDateutilParseable',
+      inset: 'ExpectColumnValuesToBeInSet',
+      notinset: 'ExpectColumnValuesToNotBeInSet',
+      allnull: 'ExpectColumnValuesToBeNull'
+    };
+
+    var params = 'Column: ' + col;
+    var checkData = { type: type, col: col, name: checkNames[type] };
+
+    if (type === 'between') {
+      var min = (document.getElementById('add-param-min') || {}).value || '';
+      var max = (document.getElementById('add-param-max') || {}).value || '';
+      params += ', Min: ' + min + ', Max: ' + max;
+      checkData.min = min;
+      checkData.max = max;
+    } else if (type === 'inset' || type === 'notinset') {
+      var vals = (document.getElementById('add-param-vals') || {}).value || '';
+      params += ', Values: ' + vals;
+      checkData.values = vals;
+    }
+
+    checkCounter++;
+    checkData.id = checkCounter;
+    additionalChecks.push(checkData);
+
+    var container = document.getElementById('additional-checks');
+    var div = document.createElement('div');
+    div.className = 'expectation-item';
+    div.id = 'added-check-' + checkCounter;
+    div.innerHTML = '<input type="checkbox" checked disabled />'
+      + '<div><div class="exp-name">' + checkNames[type] + '</div><div class="exp-desc">' + params + '</div></div>'
+      + '<div class="added-check"><button class="remove-btn" onclick="removeAddedCheck(' + checkCounter + ')">×</button></div>';
+    container.appendChild(div);
+  }
+
+  function removeAddedCheck(id) {
+    var el = document.getElementById('added-check-' + id);
+    if (el) el.remove();
+    additionalChecks = additionalChecks.filter(function(c) { return c.id !== id; });
+  }
+
+  function getQualityChecks() {
+    var checks = [];
+    // Per-column checks from grid
+    document.querySelectorAll('.col-check-grid input[type="checkbox"]:checked').forEach(function(cb) {
+      checks.push({ check: cb.dataset.check, col: cb.dataset.col });
+    });
+    document.querySelectorAll('.col-check-grid select').forEach(function(sel) {
+      checks.push({ check: 'type', col: sel.dataset.col, value: sel.value });
+    });
+    // Table-level
+    if (document.getElementById('chk-rowcount') && document.getElementById('chk-rowcount').checked) {
+      checks.push({ check: 'rowcount', min: (document.getElementById('rowcount-min') || {}).value, max: (document.getElementById('rowcount-max') || {}).value });
+    }
+    if (document.getElementById('chk-colorder') && document.getElementById('chk-colorder').checked) {
+      checks.push({ check: 'colorder', columns: (document.getElementById('colorder-list') || {}).value });
+    }
+    // Additional
+    for (var i = 0; i < additionalChecks.length; i++) {
+      checks.push(additionalChecks[i]);
+    }
+    return checks;
   }
 
   document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('columns').addEventListener('input', syncColumns);
-    document.getElementById('colorder-list').addEventListener('input', updateColExistCompulsory);
-    syncColumns(); // run once on load to reflect any pre-filled value
+    updateAddCheckParams();
   });
 
   function switchTab(e, id) {
@@ -846,6 +956,102 @@
       this.value = '';
     }
   });
+
+  function parseCSV(text, maxRows) {
+    var lines = text.split('\n').filter(function(l) { return l.trim().length > 0; });
+    var result = [];
+    for (var i = 0; i < Math.min(lines.length, maxRows + 1); i++) {
+      // Simple CSV split — handles basic cases, not quoted commas
+      var sep = lines[0].indexOf('\t') >= 0 ? '\t' : ',';
+      result.push(lines[i].split(sep).map(function(c) { return c.trim(); }));
+    }
+    return result;
+  }
+
+  function previewFile(input) {
+    var preview = document.getElementById('file-preview');
+    if (!input.files || input.files.length === 0) {
+      preview.style.display = 'none';
+      return;
+    }
+
+    var file = input.files[0];
+    var name = file.name;
+    var sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+
+    document.getElementById('preview-filename').textContent = name;
+    document.getElementById('preview-filesize').textContent = '(' + sizeMB + ' MB)';
+
+    var ext = name.split('.').pop().toLowerCase();
+    if (ext !== 'csv' && ext !== 'tsv') {
+      document.getElementById('preview-columns').innerHTML = '<span class="hint">Column detection only available for CSV/TSV files</span>';
+      document.getElementById('preview-table').innerHTML = '';
+      preview.style.display = 'block';
+      return;
+    }
+
+    // Read first 64KB to extract headers and preview rows
+    var reader = new FileReader();
+    var blob = file.slice(0, 65536);
+    reader.onload = function(e) {
+      var text = e.target.result;
+      var rows = parseCSV(text, 5);
+
+      if (rows.length === 0) {
+        preview.style.display = 'none';
+        return;
+      }
+
+      var headers = rows[0];
+
+      // Show column tags
+      var colHtml = headers.map(function(h) {
+        return '<span style="display:inline-block;background:#e8eaf6;color:#1a237e;border-radius:12px;padding:2px 10px;font-size:12px;margin:2px 4px 2px 0;font-weight:600;">' + h + '</span>';
+      }).join('');
+      document.getElementById('preview-columns').innerHTML = colHtml;
+
+      // Auto-fill the columns field on step 1
+      var colField = document.getElementById('columns');
+      if (colField && !colField.value) {
+        colField.value = headers.join(', ');
+        syncColumns();
+      }
+
+      // Guess column types from first data row
+      detectedColumns = [];
+      for (var ci = 0; ci < headers.length; ci++) {
+        var sampleVal = (rows.length > 1) ? (rows[1][ci] || '') : '';
+        var guessedType = 'str';
+        if (!isNaN(parseFloat(sampleVal)) && isFinite(sampleVal)) {
+          guessedType = sampleVal.indexOf('.') >= 0 ? 'float' : 'int';
+        } else if (sampleVal.match && sampleVal.match(/^\d{4}-\d{2}/)) {
+          guessedType = 'date';
+        }
+        detectedColumns.push({ name: headers[ci], type: guessedType });
+      }
+
+      buildColumnChecks(detectedColumns);
+
+      // Build preview table
+      var tbl = '<thead><tr>';
+      for (var i = 0; i < headers.length; i++) {
+        tbl += '<th>' + headers[i] + '</th>';
+      }
+      tbl += '</tr></thead><tbody>';
+      for (var r = 1; r < rows.length; r++) {
+        tbl += '<tr>';
+        for (var c = 0; c < headers.length; c++) {
+          tbl += '<td>' + (rows[r][c] || '') + '</td>';
+        }
+        tbl += '</tr>';
+      }
+      tbl += '</tbody>';
+      document.getElementById('preview-table').innerHTML = tbl;
+
+      preview.style.display = 'block';
+    };
+    reader.readAsText(blob);
+  }
 
   // ── EDC Configuration ────────────────────────────────────────────────────
   // Auto-detect: the submit page is served from the default HTTP port,
