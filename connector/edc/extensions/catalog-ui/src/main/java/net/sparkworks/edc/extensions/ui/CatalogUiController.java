@@ -3,13 +3,16 @@ package net.sparkworks.edc.extensions.ui;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.contract.spi.offer.store.ContractDefinitionStore;
 import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
@@ -268,6 +271,43 @@ public class CatalogUiController {
             return Response.ok(MAPPER.writeValueAsString(arr)).build();
         } catch (Exception e) {
             monitor.severe("Failed to list transfers", e);
+            return jsonError(e);
+        }
+    }
+
+    @POST
+    @Path("catalog/api/upload")
+    @Consumes(MediaType.APPLICATION_OCTET_STREAM)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response uploadFile(@jakarta.ws.rs.QueryParam("bucket") String bucket,
+                               @jakarta.ws.rs.QueryParam("key") String key,
+                               @jakarta.ws.rs.QueryParam("endpoint") String endpoint,
+                               @jakarta.ws.rs.QueryParam("accessKey") String accessKey,
+                               @jakarta.ws.rs.QueryParam("secretKey") String secretKey,
+                               InputStream body) {
+        try {
+            if (bucket == null || key == null) {
+                return Response.status(400).entity("{\"error\":\"bucket and key are required\"}").build();
+            }
+            var ep = endpoint != null ? endpoint : "http://rustfs:9000";
+            var ak = accessKey != null ? accessKey : "participant-admin";
+            var sk = secretKey != null ? secretKey : "participant-secret-2024";
+
+            var client = MinioClient.builder().endpoint(ep).credentials(ak, sk).build();
+            client.putObject(PutObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(key)
+                    .stream(body, -1, 10485760)
+                    .contentType("application/octet-stream")
+                    .build());
+
+            ObjectNode result = MAPPER.createObjectNode();
+            result.put("bucket", bucket);
+            result.put("key", key);
+            result.put("status", "uploaded");
+            return Response.ok(MAPPER.writeValueAsString(result)).build();
+        } catch (Exception e) {
+            monitor.severe("Failed to upload file: " + key, e);
             return jsonError(e);
         }
     }

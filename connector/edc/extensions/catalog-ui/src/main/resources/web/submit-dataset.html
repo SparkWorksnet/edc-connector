@@ -1066,14 +1066,16 @@
   const S3_BUCKET = 'my-datasets';
 
   async function uploadFileToS3(file, key) {
-    const formData = new FormData();
-    // Use presigned POST via the S3 API — but for simplicity, use PUT via fetch
-    const url = S3_ENDPOINT + '/' + S3_BUCKET + '/' + encodeURIComponent(key);
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': file.type || 'application/octet-stream',
-      },
+    const params = new URLSearchParams({
+      bucket: S3_BUCKET,
+      key: key,
+      endpoint: S3_INTERNAL,
+      accessKey: S3_ACCESS,
+      secretKey: S3_SECRET,
+    });
+    const response = await fetch('/api/catalog/api/upload?' + params.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
       body: file,
     });
     return response.ok;
