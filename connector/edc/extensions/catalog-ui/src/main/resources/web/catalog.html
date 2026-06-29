@@ -51,22 +51,16 @@
         .meta-section { font-size: 0.7rem; text-transform: uppercase; color: #888; margin-top: 0.5rem; margin-bottom: 0.2rem; grid-column: 1 / -1; border-bottom: 1px solid #eee; padding-bottom: 0.2rem; }
         .asset-row { cursor: pointer; }
         .asset-row:hover td { background: #f0f0ff; }
-        .tree { padding: 0; }
-        .tree-node { position: relative; padding: 0.6rem 1rem; margin: 0; }
-        .tree-node .node-content { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 0.6rem 1rem; display: inline-block; max-width: 100%; cursor: pointer; transition: border-color 0.15s; }
-        .tree-node .node-content:hover { border-color: #1a237e; }
-        .tree-node .node-content.root { border-color: #1a237e; border-width: 2px; }
-        .tree-node .node-content.derived { border-left: 3px solid #4caf50; }
-        .tree-node .node-name { font-weight: 600; font-size: 0.9rem; }
-        .tree-node .node-id { font-family: monospace; font-size: 0.75rem; color: #999; }
-        .tree-node .node-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-left: 0.5rem; }
-        .tree-node .node-badge.source { background: #e3f2fd; color: #1565c0; }
-        .tree-node .node-badge.derived-badge { background: #e8f5e9; color: #2e7d32; }
-        .tree-node .node-prov { font-size: 0.75rem; color: #888; margin-top: 0.2rem; }
-        .tree-children { margin-left: 2rem; border-left: 2px solid #ccc; padding-left: 0; }
-        .tree-children .tree-node::before { content: ''; position: absolute; left: -2rem; top: 1.2rem; width: 2rem; height: 0; border-top: 2px solid #ccc; }
-        .tree-connector { font-size: 0.7rem; color: #4caf50; margin-left: 2.5rem; padding: 0.1rem 0; }
-        .no-lineage { text-align: center; padding: 3rem; color: #888; }
+        .asset-row.derived-row td:first-child { box-shadow: inset 3px 0 0 #4caf50; }
+        .asset-cell { display: flex; flex-direction: column; }
+        .asset-cell .asset-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.1rem; }
+        .lineage-connector { color: #4caf50; font-weight: 700; margin-right: 0.35rem; }
+        .asset-badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 3px; font-size: 0.7rem; font-weight: 600; margin-left: 0.5rem; }
+        .asset-badge.source { background: #e3f2fd; color: #1565c0; }
+        .asset-badge.derived-badge { background: #e8f5e9; color: #2e7d32; }
+        .asset-prov { font-size: 0.72rem; color: #888; margin-top: 0.15rem; }
+        .lineage-legend { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; font-size: 0.78rem; color: #666; }
+        .lineage-legend > span { display: inline-flex; align-items: center; gap: 0.3rem; }
     </style>
 </head>
 <body>
@@ -90,11 +84,14 @@
             <div class="stat-card" onclick="showPanel('agreements', this)"><div class="label">Agreements</div><div class="value" id="agreement-count">-</div></div>
             <div class="stat-card" onclick="showPanel('negotiations', this)"><div class="label">Negotiations</div><div class="value" id="negotiation-count">-</div></div>
             <div class="stat-card" onclick="showPanel('transfers', this)"><div class="label">Transfers</div><div class="value" id="transfer-count">-</div></div>
-            <div class="stat-card" onclick="showPanel('lineage', this)"><div class="label">Lineage</div><div class="value" id="lineage-count">-</div></div>
         </div>
 
         <div id="assets-panel" class="panel active">
             <div class="search"><input type="text" id="asset-search" placeholder="Filter assets..." oninput="filterAssets()"></div>
+            <div class="lineage-legend">
+                <span><span class="asset-badge source">source</span> original dataset</span>
+                <span><span class="asset-badge derived-badge">derived</span> produced from a source &mdash; nested under its parent</span>
+            </div>
             <div id="assets-table"><div class="loading">Loading assets...</div></div>
         </div>
 
@@ -118,9 +115,6 @@
             <div id="transfers-table"><div class="loading">Loading...</div></div>
         </div>
 
-        <div id="lineage-panel" class="panel">
-            <div id="lineage-tree"><div class="loading">Loading...</div></div>
-        </div>
     </div>
 
     <script>
@@ -199,26 +193,60 @@
             if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
         }
 
+        // Depth-first flatten of a lineage tree into ordered rows carrying their depth.
+        function flattenTree(node, depth, parentId, out) {
+            out.push({ asset: node.asset, depth: depth, parentId: parentId });
+            for (const child of node.children) {
+                flattenTree(child, depth + 1, node.asset.id, out);
+            }
+        }
+
         function renderAssets(assets) {
             if (assets.length === 0) {
                 document.getElementById('assets-table').innerHTML = '<div class="loading">No assets found</div>';
                 return;
             }
+
+            // Order assets so derived ones are nested directly under their source.
+            const { roots } = buildLineageTrees(assets);
+            const ordered = [];
+            for (const root of roots) flattenTree(root, 0, null, ordered);
+
             let html = '<table><thead><tr><th>Asset</th><th>Type</th><th>Source</th><th></th></tr></thead><tbody>';
-            for (let i = 0; i < assets.length; i++) {
-                const a = assets[i];
+            for (let i = 0; i < ordered.length; i++) {
+                const a = ordered[i].asset;
+                const depth = ordered[i].depth;
+                const parentId = ordered[i].parentId;
+                const derivedFrom = a.metadata && (a.metadata['prov.wasDerivedFrom'] || a.metadata['prov:wasDerivedFrom']);
+                const isDerived = !!derivedFrom;
+                const pipeline = a.metadata && (a.metadata['prov.wasGeneratedBy'] || a.metadata['prov:wasGeneratedBy']);
+                const author = a.metadata && (a.metadata['prov.wasAttributedTo'] || a.metadata['prov:wasAttributedTo']);
                 const type = a.dataAddress ? a.dataAddress.type : '';
                 const source = a.dataAddress
                     ? (a.dataAddress.prefix || a.dataAddress.baseUrl || '')
                     : '';
                 const bucket = a.dataAddress && a.dataAddress.bucketName ? a.dataAddress.bucketName + '/' : '';
                 const hasMeta = a.metadata && Object.keys(a.metadata).length > 0;
-                html += '<tr class="asset-row" onclick="toggleMeta(' + i + ')">';
-                html += '<td><strong>' + esc(a.name || a.id) + '</strong>';
-                if (a.contentType) html += '<br><span class="muted">' + esc(a.contentType) + '</span>';
-                html += '<br><span class="mono muted">' + esc(a.id) + '</span>';
-                if (hasMeta) html += '<br><span class="muted" style="font-size:0.7rem">&#9660; click to expand metadata</span>';
-                html += '</td>';
+
+                html += '<tr class="asset-row' + (isDerived ? ' derived-row' : '') + '" onclick="toggleMeta(' + i + ')">';
+                html += '<td><div class="asset-cell" style="padding-left:' + (depth * 1.5) + 'rem">';
+                html += '<span class="asset-head">';
+                if (depth > 0) html += '<span class="lineage-connector" title="derived from ' + escAttr(parentId || derivedFrom) + '">&#8627;</span>';
+                html += '<strong>' + esc(a.name || a.id) + '</strong>';
+                html += '<span class="asset-badge ' + (isDerived ? 'derived-badge' : 'source') + '">' + (isDerived ? 'derived' : 'source') + '</span>';
+                html += '</span>';
+                if (a.contentType) html += '<span class="muted">' + esc(a.contentType) + '</span>';
+                html += '<span class="mono muted">' + esc(a.id) + '</span>';
+                if (isDerived && !parentId) html += '<span class="asset-prov">&#8627; derived from ' + esc(derivedFrom) + ' (not in catalogue)</span>';
+                if (pipeline || author) {
+                    html += '<span class="asset-prov">';
+                    if (pipeline) html += 'Pipeline: ' + esc(pipeline);
+                    if (pipeline && author) html += ' | ';
+                    if (author) html += 'By: ' + esc(author);
+                    html += '</span>';
+                }
+                if (hasMeta) html += '<span class="muted" style="font-size:0.7rem">&#9660; click to expand metadata</span>';
+                html += '</div></td>';
                 html += '<td><span class="badge ' + badgeClass(type) + '">' + esc(type) + '</span></td>';
                 html += '<td style="font-size:0.8rem;color:#555">' + esc(bucket + source) + '</td>';
                 html += '<td><button class="btn-download" onclick="event.stopPropagation(); downloadAsset(\'' + escAttr(a.id) + '\')">Download</button></td>';
@@ -325,81 +353,6 @@
             return { roots, byId };
         }
 
-        function renderTreeNode(node, isRoot) {
-            const a = node.asset;
-            const isDerived = a.metadata && (a.metadata['prov.wasDerivedFrom'] || a.metadata['prov:wasDerivedFrom']);
-            const pipeline = a.metadata && (a.metadata['prov.wasGeneratedBy'] || a.metadata['prov:wasGeneratedBy']);
-            const author = a.metadata && (a.metadata['prov.wasAttributedTo'] || a.metadata['prov:wasAttributedTo']);
-
-            let html = '<div class="tree-node">';
-            html += '<div class="node-content ' + (isRoot ? 'root' : 'derived') + '" onclick="toggleMeta(\'' + escAttr(a.id) + '-lineage\')">';
-            html += '<span class="node-name">' + esc(a.name || a.id) + '</span>';
-            html += '<span class="node-badge ' + (isDerived ? 'derived-badge' : 'source') + '">' + (isDerived ? 'derived' : 'source') + '</span>';
-            html += '<br><span class="node-id">' + esc(a.id) + '</span>';
-            if (a.contentType) html += ' <span class="muted">(' + esc(a.contentType) + ')</span>';
-            if (pipeline || author) {
-                html += '<div class="node-prov">';
-                if (pipeline) html += 'Pipeline: ' + esc(pipeline);
-                if (pipeline && author) html += ' | ';
-                if (author) html += 'By: ' + esc(author);
-                html += '</div>';
-            }
-            html += '</div>';
-
-            // Expandable metadata
-            html += '<div id="meta-' + escAttr(a.id) + '-lineage" style="display:none; margin-top:0.3rem; margin-left:1rem;">' + renderMetadataGrid(a.metadata) + '</div>';
-
-            if (node.children.length > 0) {
-                html += '<div class="tree-children">';
-                for (const child of node.children) {
-                    const childDerived = child.asset.metadata && (child.asset.metadata['prov.wasDerivedFrom'] || child.asset.metadata['prov:wasDerivedFrom']);
-                    html += '<div class="tree-connector">&#8627; derived from ' + esc(childDerived || a.id) + '</div>';
-                    html += renderTreeNode(child, false);
-                }
-                html += '</div>';
-            }
-
-            html += '</div>';
-            return html;
-        }
-
-        function renderLineage(assets) {
-            const { roots, byId } = buildLineageTrees(assets);
-
-            const hasLineage = assets.some(a => a.metadata && (a.metadata['prov.wasDerivedFrom'] || a.metadata['prov:wasDerivedFrom']));
-            document.getElementById('lineage-count').textContent = hasLineage ? roots.length : 0;
-
-            if (!hasLineage) {
-                document.getElementById('lineage-tree').innerHTML = '<div class="no-lineage">No provenance relationships found. Register derived assets with prov.wasDerivedFrom metadata.</div>';
-                return;
-            }
-
-            // Only show trees that have at least one derived asset
-            const treesWithChildren = roots.filter(r => r.children.length > 0);
-            // Also show orphan derived assets (parent not in catalogue)
-            const orphanDerived = assets.filter(a => {
-                const parentId = a.metadata && (a.metadata['prov.wasDerivedFrom'] || a.metadata['prov:wasDerivedFrom']);
-                return parentId && !byId[parentId];
-            });
-
-            let html = '';
-            for (const root of treesWithChildren) {
-                html += '<div class="tree">' + renderTreeNode(root, true) + '</div>';
-            }
-            for (const a of orphanDerived) {
-                html += '<div class="tree"><div class="tree-node">';
-                html += '<div class="tree-connector">&#8627; derived from <span class="mono">' + esc(a.metadata['prov.wasDerivedFrom'] || a.metadata['prov:wasDerivedFrom']) + '</span> (not in catalogue)</div>';
-                html += renderTreeNode(byId[a.id], false);
-                html += '</div></div>';
-            }
-
-            if (!html) {
-                html = '<div class="no-lineage">No provenance trees found.</div>';
-            }
-
-            document.getElementById('lineage-tree').innerHTML = html;
-        }
-
         async function load() {
             try {
                 const [assetsRes, contractsRes, policiesRes, agreementsRes, negotiationsRes, transfersRes] = await Promise.all([
@@ -455,7 +408,6 @@
                 renderAgreements(agreements);
                 renderNegotiations(negotiations);
                 renderTransfers(transfers);
-                renderLineage(allAssets);
 
             } catch (e) {
                 document.getElementById('assets-table').innerHTML = '<div class="error">Failed to load: ' + e.message + '</div>';
