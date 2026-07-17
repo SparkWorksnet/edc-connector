@@ -36,6 +36,32 @@
         .state-terminated, .state-error { background: #ffebee; color: #c62828; }
         .btn-download { padding: 0.35rem 0.8rem; border: 1px solid #1a237e; background: #fff; color: #1a237e; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
         .btn-download:hover { background: #1a237e; color: #fff; }
+        .btn-validate { padding: 0.35rem 0.8rem; border: 1px solid #2e7d32; background: #fff; color: #2e7d32; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-left: 0.4rem; }
+        .btn-validate:hover { background: #2e7d32; color: #fff; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: center; justify-content: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: #fff; border-radius: 8px; width: 90%; max-width: 640px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.25); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem; border-bottom: 1px solid #eee; position: sticky; top: 0; background: #fff; }
+        .modal-header h2 { font-size: 1rem; color: #1a237e; }
+        .modal-close { border: none; background: none; font-size: 1.3rem; line-height: 1; cursor: pointer; color: #888; }
+        .modal-close:hover { color: #333; }
+        .modal-body { padding: 1.25rem; }
+        .val-summary { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+        .val-badge { padding: 0.25rem 0.7rem; border-radius: 4px; font-weight: 700; font-size: 0.85rem; }
+        .val-badge.pass { background: #e8f5e9; color: #2e7d32; }
+        .val-badge.fail { background: #ffebee; color: #c62828; }
+        .val-bar-track { flex: 1; height: 10px; background: #eee; border-radius: 5px; overflow: hidden; }
+        .val-bar-fill { height: 100%; background: #2e7d32; }
+        .val-bar-fill.fail { background: #c62828; }
+        .val-pct { font-size: 0.8rem; color: #666; white-space: nowrap; }
+        .val-meta { font-size: 0.75rem; color: #888; margin-bottom: 1rem; }
+        .val-table { width: 100%; border-collapse: collapse; }
+        .val-table th { text-align: left; padding: 0.4rem 0.5rem; font-size: 0.72rem; text-transform: uppercase; color: #888; border-bottom: 1px solid #eee; }
+        .val-table td { padding: 0.4rem 0.5rem; font-size: 0.82rem; border-bottom: 1px solid #f2f2f2; }
+        .val-check { font-weight: 700; }
+        .val-check.pass { color: #2e7d32; }
+        .val-check.fail { color: #c62828; }
+        .val-error { font-size: 0.75rem; color: #c62828; margin-top: 0.15rem; }
         .loading { text-align: center; padding: 3rem; color: #888; }
         .error { text-align: center; padding: 2rem; color: #c62828; background: #ffebee; border-radius: 8px; }
         .panel { display: none; }
@@ -115,6 +141,16 @@
             <div id="transfers-table"><div class="loading">Loading...</div></div>
         </div>
 
+    </div>
+
+    <div class="modal-overlay" id="validation-modal-overlay" onclick="if (event.target === this) closeValidationModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="validation-modal-title">Validation Report</h2>
+                <button class="modal-close" onclick="closeValidationModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="validation-modal-body"></div>
+        </div>
     </div>
 
     <script>
@@ -249,7 +285,8 @@
                 html += '</div></td>';
                 html += '<td><span class="badge ' + badgeClass(type) + '">' + esc(type) + '</span></td>';
                 html += '<td style="font-size:0.8rem;color:#555">' + esc(bucket + source) + '</td>';
-                html += '<td><button class="btn-download" onclick="event.stopPropagation(); downloadAsset(\'' + escAttr(a.id) + '\')">Download</button></td>';
+                html += '<td><button class="btn-download" onclick="event.stopPropagation(); downloadAsset(\'' + escAttr(a.id) + '\')">Download</button>';
+                html += '<button class="btn-validate" onclick="event.stopPropagation(); viewValidation(\'' + escAttr(a.id) + '\', \'' + escAttr(a.name || a.id) + '\')">Validation</button></td>';
                 html += '</tr>';
                 html += '<tr class="meta-row" id="meta-' + i + '" style="display:none"><td colspan="4">' + renderMetadataGrid(a.metadata) + '</td></tr>';
             }
@@ -330,6 +367,63 @@
 
         function downloadAsset(assetId) {
             window.location.href = BASE + '/api/download?assetId=' + encodeURIComponent(assetId);
+        }
+
+        function closeValidationModal() {
+            document.getElementById('validation-modal-overlay').classList.remove('active');
+        }
+
+        async function viewValidation(assetId, assetName) {
+            const overlay = document.getElementById('validation-modal-overlay');
+            const body = document.getElementById('validation-modal-body');
+            document.getElementById('validation-modal-title').textContent = 'Validation Report — ' + assetName;
+            body.innerHTML = '<div class="loading">Loading report...</div>';
+            overlay.classList.add('active');
+
+            try {
+                const res = await fetch(BASE + '/api/validation?assetId=' + encodeURIComponent(assetId));
+                if (res.status === 404) {
+                    body.innerHTML = '<div class="loading">No validation report found for this asset yet.</div>';
+                    return;
+                }
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    body.innerHTML = '<div class="error">Failed to load report: ' + esc(err.error || res.statusText) + '</div>';
+                    return;
+                }
+                const report = await res.json();
+                body.innerHTML = renderValidationReport(report);
+            } catch (e) {
+                body.innerHTML = '<div class="error">Failed to load report: ' + esc(e.message) + '</div>';
+            }
+        }
+
+        function renderValidationReport(report) {
+            const stats = report.statistics || {};
+            const total = stats.evaluated_expectations || 0;
+            const passed = stats.successful_expectations || 0;
+            const pct = stats.success_percent || 0;
+            const success = !!report.success;
+
+            let html = '<div class="val-summary">';
+            html += '<span class="val-badge ' + (success ? 'pass' : 'fail') + '">' + (success ? 'PASSED' : 'FAILED') + '</span>';
+            html += '<div class="val-bar-track"><div class="val-bar-fill' + (success ? '' : ' fail') + '" style="width:' + pct + '%"></div></div>';
+            html += '<span class="val-pct">' + passed + '/' + total + ' (' + Math.round(pct) + '%)</span>';
+            html += '</div>';
+            if (report.run_time) html += '<div class="val-meta">Run at ' + esc(report.run_time) + '</div>';
+
+            html += '<table class="val-table"><thead><tr><th>Expectation</th><th>Column</th><th>Result</th></tr></thead><tbody>';
+            for (const r of (report.results || [])) {
+                const column = (r.kwargs && r.kwargs.column) || '';
+                html += '<tr><td>' + esc(r.expectation_type) + '</td><td>' + esc(column) + '</td>';
+                html += '<td><span class="val-check ' + (r.success ? 'pass' : 'fail') + '">' + (r.success ? 'PASS' : 'FAIL') + '</span>';
+                if (!r.success && r.result && r.result.error) {
+                    html += '<div class="val-error">' + esc(r.result.error) + '</div>';
+                }
+                html += '</td></tr>';
+            }
+            html += '</tbody></table>';
+            return html;
         }
 
         function buildLineageTrees(assets) {

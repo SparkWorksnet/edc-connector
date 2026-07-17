@@ -11,8 +11,11 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import io.minio.GetObjectArgs;
+import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.contract.spi.offer.store.ContractDefinitionStore;
 import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
@@ -359,6 +362,66 @@ public class CatalogUiController {
         } catch (Exception e) {
             monitor.severe("Failed to download asset: " + assetId, e);
             return Response.serverError().entity("Download failed: " + e.getMessage()).build();
+        }
+    }
+
+    @GET
+    @Path("catalog/api/validation")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getValidationReport(@jakarta.ws.rs.QueryParam("assetId") String assetId) {
+        try {
+            if (assetId == null || assetId.isBlank()) {
+                return Response.status(400).entity("{\"error\":\"assetId is required\"}").build();
+            }
+
+            var asset = assetIndex.findById(assetId);
+            if (asset == null) {
+                return Response.status(404).entity("{\"error\":\"asset not found: " + assetId + "\"}").build();
+            }
+
+            var da = asset.getDataAddress();
+            var type = da.getType();
+            if (!"MinioAsset".equals(type) && !"MinioFiles".equals(type)) {
+                return Response.status(400).entity("{\"error\":\"validation reports are only supported for MinIO-backed assets\"}").build();
+            }
+
+            var endpoint = da.getStringProperty("endpoint");
+            var bucket = da.getStringProperty("bucketName");
+            var accessKey = da.getStringProperty("accessKey");
+            var secretKey = da.getStringProperty("secretKey");
+            var assetPrefix = da.getStringProperty("prefix");
+
+            var client = MinioClient.builder().endpoint(endpoint).credentials(accessKey, secretKey).build();
+
+            // hackfest_validate_dataset's upload_results task (see dali.datalake) writes
+            // the report next to the original file, in the *same* bucket, named after it
+            // with the extension dropped: "<original-basename>_<timestamp>.gx.json" — the
+            // exact timestamp isn't known up front, so the latest is found by prefix
+            // listing and picking the lexicographically greatest key.
+            var basePrefix = assetPrefix.contains(".") ? assetPrefix.substring(0, assetPrefix.lastIndexOf('.')) : assetPrefix;
+            String reportPrefix = basePrefix + "_";
+            String latestKey = null;
+            Iterable<Result<Item>> results = client.listObjects(
+                    ListObjectsArgs.builder().bucket(bucket).prefix(reportPrefix).recursive(true).build());
+            for (Result<Item> result : results) {
+                Item item = result.get();
+                String key = item.objectName();
+                if (key.endsWith(".gx.json") && (latestKey == null || key.compareTo(latestKey) > 0)) {
+                    latestKey = key;
+                }
+            }
+
+            if (latestKey == null) {
+                return Response.status(404).entity("{\"error\":\"no validation report found for asset " + assetId + "\"}").build();
+            }
+
+            try (var stream = client.getObject(GetObjectArgs.builder().bucket(bucket).object(latestKey).build())) {
+                String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+                return Response.ok(json).header("X-Report-Key", latestKey).build();
+            }
+        } catch (Exception e) {
+            monitor.severe("Failed to fetch validation report for asset: " + assetId, e);
+            return jsonError(e);
         }
     }
 
