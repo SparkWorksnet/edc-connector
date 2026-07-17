@@ -44,6 +44,7 @@ import java.util.concurrent.ExecutorService;
  */
 public class PiveauDataSink implements DataSink {
     private final MinioClient minioClient;
+    private final String minioEndpoint;
     private final String bucketName;
     private final String prefix;
     private final Monitor monitor;
@@ -55,11 +56,12 @@ public class PiveauDataSink implements DataSink {
     private final String authKey;
     private final String experimentPrefix;
 
-    public PiveauDataSink(MinioClient minioClient, String bucketName, String prefix,
+    public PiveauDataSink(MinioClient minioClient, String minioEndpoint, String bucketName, String prefix,
                           PiveauApiHandler piveauApiHandler, Monitor monitor, ExecutorService executorService,
                           ConnectionFactory rabbitConnectionFactory, String rabbitQueue,
                           String httpDestinationUrl, String authKey, String experimentPrefix) {
         this.minioClient = minioClient;
+        this.minioEndpoint = minioEndpoint;
         this.bucketName = bucketName;
         this.prefix = prefix != null ? prefix : "";
         this.piveauApiHandler = piveauApiHandler;
@@ -196,24 +198,26 @@ public class PiveauDataSink implements DataSink {
             try (var inputStream = part.openStream()) {
                 byte[] fileContent = inputStream.readAllBytes();
 
+                final String objectKey = experimentId + "/" + fileName;
+                final String downloadUrl = buildDownloadUrl(destinationBucket, objectKey);
+
                 // Create distribution in Piveau for this file (only if dataset is already registered)
                 if (piveauApiHandler != null && dirName != null) {
                     if (piveauApiHandler.datasetExists(experimentId, destinationBucket)) {
                         try {
-                            String distributionId = piveauApiHandler.createDistribution(experimentId, fileName);
+                            String distributionId = piveauApiHandler.createDistribution(experimentId, fileName, downloadUrl);
                             monitor.info("✓ Distribution created in Piveau: " + distributionId);
                         } catch (IOException e) {
                             monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
                             // Continue with upload even if distribution creation fails
                         }
                     } else {
-                        piveauApiHandler.schedulePendingDistribution(experimentId, fileName, destinationBucket);
+                        piveauApiHandler.schedulePendingDistribution(experimentId, fileName, destinationBucket, downloadUrl);
                     }
                 } else {
                     monitor.warning("⚠ Piveau API handler not configured or dataset ID not available, skipping distribution creation");
                 }
-                
-                final String objectKey = experimentId + "/" + fileName;
+
                 minioClient.putObject(
                     PutObjectArgs.builder()
                         .bucket(destinationBucket)
@@ -271,10 +275,11 @@ public class PiveauDataSink implements DataSink {
         try (var inputStream = part.openStream()) {
             byte[] fileContent = inputStream.readAllBytes();
 
-            // Create distribution in Piveau for this file
+            // Create distribution in Piveau for this file — no downloadUrl here: the file is
+            // forwarded over HTTP, not placed in S3, so there's no object location to record.
             if (piveauApiHandler != null && dirName != null) {
                 try {
-                    String distributionId = piveauApiHandler.createDistribution(experimentId, fileName);
+                    String distributionId = piveauApiHandler.createDistribution(experimentId, fileName, null);
                     monitor.info("✓ Distribution created in Piveau: " + distributionId);
                 } catch (IOException e) {
                     monitor.warning("⚠ Failed to create distribution in Piveau: " + e.getMessage());
@@ -317,6 +322,19 @@ public class PiveauDataSink implements DataSink {
         }
         String normalizedPrefix = prefix.endsWith("/") ? prefix : prefix + "/";
         return normalizedPrefix + partName;
+    }
+
+    /**
+     * The actual S3/MinIO URL a distribution's file was uploaded to — recorded as
+     * dcat:downloadURL (see PiveauApiHandler.buildDistributionTurtle), distinct from
+     * dcat:accessURL (the EDC connector's negotiation entrypoint, set unconditionally there).
+     */
+    private String buildDownloadUrl(String bucket, String objectKey) {
+        if (minioEndpoint == null || minioEndpoint.isEmpty()) {
+            return null;
+        }
+        String base = minioEndpoint.endsWith("/") ? minioEndpoint.substring(0, minioEndpoint.length() - 1) : minioEndpoint;
+        return base + "/" + bucket + "/" + objectKey;
     }
     
     /**

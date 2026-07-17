@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -55,6 +56,15 @@ public class PiveauApiHandler {
 
     private final ConcurrentLinkedQueue<PendingTask> pendingTasks = new ConcurrentLinkedQueue<>();
     private final ScheduledExecutorService retryScheduler;
+
+    /**
+     * The last {@link DatasetMetadata} successfully registered per datasetId — this pipeline
+     * only ever gets column/technique/license info from the one JSON metadata file per
+     * dataset (there's no separate per-CSV metadata input), so a distribution's own
+     * schema:variableMeasured / schema:measurementTechnique / dct:license (see
+     * buildDistributionTurtle) are read back from here rather than re-declared per file.
+     */
+    private final Map<String, DatasetMetadata> datasetMetadataCache = new ConcurrentHashMap<>();
 
     /**
      * A retryable unit of work submitted to the pending task queue.
@@ -168,6 +178,7 @@ public class PiveauApiHandler {
                 if (!responseBody.isEmpty()) {
                     monitor.debug("  Response body: " + responseBody);
                 }
+                datasetMetadataCache.put(datasetId, metadata);
                 return datasetId;
             } else {
                 String errorBody = response.body() != null ? response.body().string() : "No error details";
@@ -269,20 +280,10 @@ public class PiveauApiHandler {
                   .append(metadata.getContactEmail()).append("> ] ;\n");
         }
 
-        // ── Content description (Recommended) ─────────────────────────────────
-        if (metadata.getColumns() != null && !metadata.getColumns().isEmpty()) {
-            turtle.append("    schema:variableMeasured   ");
-            for (int i = 0; i < metadata.getColumns().size(); i++) {
-                if (i > 0) turtle.append(", ");
-                turtle.append("\"").append(escapeString(metadata.getColumns().get(i))).append("\"");
-            }
-            turtle.append(" ;\n");
-        }
-
-        if (hasText(metadata.getMeasurementTechnique())) {
-            turtle.append("    schema:measurementTechnique \"")
-                  .append(escapeString(metadata.getMeasurementTechnique())).append("\"@en ;\n");
-        }
+        // Note: schema:variableMeasured / schema:measurementTechnique describe a specific
+        // file's columns, not the dataset as a whole (a dataset can have distributions with
+        // different columns) — per the 6G-DALI MAP (§5.3.E) these belong on the
+        // dcat:Distribution instead (see buildDistributionTurtle), not here.
 
         // ── 5G/6G Testbed Context (Recommended) ───────────────────────────────
         TestbedContext tc = metadata.getTestbedContext();
@@ -475,14 +476,14 @@ public class PiveauApiHandler {
      * The task returns {@code false} (retry) while the dataset is absent, and {@code true} once
      * the distribution is successfully created.
      */
-    public void schedulePendingDistribution(String datasetId, String fileName, String catalogueId) {
+    public void schedulePendingDistribution(String datasetId, String fileName, String catalogueId, String downloadUrl) {
         monitor.info("⏳ Queuing distribution for '" + fileName + "' under dataset '" + datasetId
                 + "' (catalogue: " + catalogueId + ") — will retry every " + PENDING_RETRY_INTERVAL_SECONDS + "s");
         pendingTasks.add(new PendingTask(
                 "Distribution: " + fileName + " → dataset " + datasetId,
                 () -> {
                     if (!datasetExists(datasetId, catalogueId)) return false;
-                    createDistribution(datasetId, fileName);
+                    createDistribution(datasetId, fileName, downloadUrl);
                     return true;
                 }
         ));
@@ -526,12 +527,17 @@ public class PiveauApiHandler {
      * Create a distribution for a file in an existing Piveau dataset.
      * The distribution represents the actual data file (CSV, etc.) associated with the dataset.
      *
-     * @param datasetId  the ID of the dataset (from dirName)
-     * @param fileName   the name of the file being uploaded
+     * @param datasetId   the ID of the dataset (from dirName)
+     * @param fileName    the name of the file being uploaded
+     * @param downloadUrl the file's actual S3/MinIO URL, written as dcat:downloadURL —
+     *                    distinct from dcat:accessURL (the EDC connector's negotiation
+     *                    entrypoint, always set). May be null (e.g. the HTTP-forward
+     *                    fallback path never places the file in S3, so there's nothing
+     *                    to record here).
      * @return the distribution ID
      * @throws IOException if the API call fails
      */
-    public String createDistribution(String datasetId, String fileName) throws IOException {
+    public String createDistribution(String datasetId, String fileName, String downloadUrl) throws IOException {
         if (datasetId == null || datasetId.isEmpty()) {
             throw new IOException("Dataset ID is required to create distribution");
         }
@@ -540,11 +546,20 @@ public class PiveauApiHandler {
             throw new IOException("File name is required to create distribution");
         }
 
-        // Generate distribution ID from filename (remove extension and sanitize)
+        // Generate distribution ID from filename (remove extension and sanitize) — used only
+        // for the distribution's own URI slug (piveau mints its own canonical id on write
+        // regardless), so it's kept dataset-prefixed for readability/uniqueness there.
         String distributionId = generateDistributionId(datasetId + "-" + fileName);
+
+        // dali:assetId, by contrast, must match the id the file is (or will be) registered
+        // under as an EDC asset — s3-asset-monitor's EdcAssetRegistrationService.deriveAssetId
+        // uses the bare filename with its extension stripped (no dataset prefix, no
+        // slugification), so this has to use the exact same derivation to cross-reference.
+        String assetId = deriveAssetId(fileName);
 
         monitor.info("Creating distribution for dataset: " + datasetId  + " filename: "+ fileName);
         monitor.info("  DistributionId: " + distributionId);
+        monitor.info("  AssetId: " + assetId);
 
         // Get current date for issued/modified
         String currentDate = LocalDate.now().format(DateTimeFormatter.ISO_DATE);
@@ -553,10 +568,20 @@ public class PiveauApiHandler {
         String format = detectFormat(fileName);
         String mediaType = detectMediaType(fileName);
 
+        // Columns / measurement technique / license come from the dataset's own JSON
+        // metadata (there's no separate per-CSV metadata input in this pipeline) — cached
+        // in handleJsonFile since it's only available at dataset-registration time, well
+        // before any of its distributions exist.
+        DatasetMetadata datasetMetadata = datasetMetadataCache.get(datasetId);
+        List<String> columns = datasetMetadata != null ? datasetMetadata.getColumns() : null;
+        String measurementTechnique = datasetMetadata != null ? datasetMetadata.getMeasurementTechnique() : null;
+        String license = datasetMetadata != null && hasText(datasetMetadata.getLicense())
+                ? datasetMetadata.getLicense()
+                : "https://creativecommons.org/licenses/by/4.0/";
+
         // Build DCAT-AP Turtle body for the distribution
-        String turtleBody = buildDistributionTurtle(datasetId, distributionId, fileName, format, mediaType, currentDate);
-        
-        
+        String turtleBody = buildDistributionTurtle(datasetId, distributionId, assetId, fileName, format, mediaType,
+                currentDate, downloadUrl, columns, measurementTechnique, license);
 
         monitor.info("Generated Distribution Turtle:\n" + turtleBody);
 
@@ -611,9 +636,10 @@ public class PiveauApiHandler {
      * Build DCAT-AP / 6G-DALI Turtle representation of a distribution,
      * compliant with the 6G-DALI Metadata Application Profile v1.0.
      */
-    private String buildDistributionTurtle(String datasetId, String distributionId,
+    private String buildDistributionTurtle(String datasetId, String distributionId, String assetId,
                                           String fileName, String format,
-                                          String mediaType, String issuedDate) {
+                                          String mediaType, String issuedDate, String downloadUrl,
+                                          List<String> columns, String measurementTechnique, String license) {
         StringBuilder turtle = new StringBuilder();
 
         // Prefixes
@@ -621,6 +647,7 @@ public class PiveauApiHandler {
         turtle.append("@prefix dcat:   <http://www.w3.org/ns/dcat#> .\n");
         turtle.append("@prefix dcatap: <http://data.europa.eu/r5r/> .\n");
         turtle.append("@prefix dct:    <http://purl.org/dc/terms/> .\n");
+        turtle.append("@prefix schema: <https://schema.org/> .\n");
         turtle.append("@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .\n\n");
 
         String distributionUri = apiUrl + "/" + datasetId + "/distributions/" + distributionId;
@@ -629,12 +656,35 @@ public class PiveauApiHandler {
         turtle.append("    a                       dcat:Distribution ;\n");
         turtle.append("    dct:title               \"").append(escapeString(fileName)).append("\"@en ;\n");
         turtle.append("    dct:description         \"Data distribution for ").append(escapeString(fileName)).append("\"@en ;\n");
+        // accessURL is the EDC connector's negotiation entrypoint (this distribution is
+        // registered there under dali:assetId — see s3-asset-monitor's
+        // EdcAssetRegistrationService), not the raw file — that's downloadURL below.
         turtle.append("    dcat:accessURL          <").append(daliConnectorUrl).append("> ;\n");
-        turtle.append("    dali:assetId            \"").append(escapeString(distributionId)).append("\" ;\n");
+        if (hasText(downloadUrl)) {
+            turtle.append("    dcat:downloadURL        <").append(downloadUrl).append("> ;\n");
+        }
+        turtle.append("    dali:assetId            \"").append(escapeString(assetId)).append("\" ;\n");
         turtle.append("    dali:connectorType      \"dspaceconnector\" ;\n");
         turtle.append("    dct:format              \"").append(format).append("\" ;\n");
         turtle.append("    dcat:mediaType          \"").append(mediaType).append("\" ;\n");
-        turtle.append("    dct:license             <https://creativecommons.org/licenses/by/4.0/> ;\n");
+        // schema:variableMeasured / schema:measurementTechnique describe this specific
+        // file's columns, not the dataset as a whole (see buildDcatTurtle) — per 6G-DALI
+        // MAP §5.3.E these belong here, on the distribution.
+        if (columns != null && !columns.isEmpty()) {
+            turtle.append("    schema:variableMeasured ");
+            for (int i = 0; i < columns.size(); i++) {
+                if (i > 0) turtle.append(", ");
+                turtle.append("\"").append(escapeString(columns.get(i))).append("\"");
+            }
+            turtle.append(" ;\n");
+        }
+        if (hasText(measurementTechnique)) {
+            turtle.append("    schema:measurementTechnique \"")
+                  .append(escapeString(measurementTechnique)).append("\"@en ;\n");
+        }
+        // Mirrors the dataset's own declared license (see buildDcatTurtle) rather than a
+        // hardcoded value independent of what the dataset submitter actually chose.
+        turtle.append("    dct:license             <").append(license).append("> ;\n");
         turtle.append("    dct:issued              \"").append(issuedDate).append("\"^^xsd:date ;\n");
         turtle.append("    dcatap:availability     <http://data.europa.eu/r5r/availability/STABLE> .\n");
 
@@ -701,6 +751,21 @@ public class PiveauApiHandler {
     }
 
     /**
+     * The EDC asset id a given file is (or will be) registered under — must exactly match
+     * s3-asset-monitor's EdcAssetRegistrationService.deriveAssetId: just the filename with
+     * its extension stripped, no path, no slugification. Kept separate from
+     * generateDistributionId (which sanitizes/prefixes for the distribution's own URI slug)
+     * since the two ids serve different purposes and must not be conflated.
+     */
+    private String deriveAssetId(String fileName) {
+        if (fileName == null) return "unknown";
+        int lastSlash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'));
+        String baseName = lastSlash >= 0 ? fileName.substring(lastSlash + 1) : fileName;
+        int lastDot = baseName.lastIndexOf('.');
+        return lastDot > 0 ? baseName.substring(0, lastDot) : baseName;
+    }
+
+    /**
      * Detect format from file extension.
      */
     private String detectFormat(String fileName) {
@@ -708,10 +773,21 @@ public class PiveauApiHandler {
         switch (extension) {
             case "csv":
                 return "CSV";
+            case "tsv":
+                return "TSV";
             case "json":
                 return "JSON";
+            case "jsonld":
+                return "JSON-LD";
+            case "jsonl":
+            case "ndjson":
+                return "JSONL";
+            case "txt":
+                return "TXT";
             case "xml":
                 return "XML";
+            case "parquet":
+                return "PARQUET";
             case "xlsx":
             case "xls":
                 return "XLSX";
@@ -723,17 +799,31 @@ public class PiveauApiHandler {
     }
 
     /**
-     * Detect media type from file extension.
+     * Detect media type from file extension — kept in sync with the canonical extension
+     * mappings used elsewhere in this project (dataops-orchestrator/piveau_dataset_client.py's
+     * CANONICAL_MEDIA_TYPE_BY_EXTENSION, s3-asset-monitor's EdcAssetRegistrationService).
      */
     private String detectMediaType(String fileName) {
         String extension = getFileExtension(fileName).toLowerCase();
         switch (extension) {
             case "csv":
                 return "text/csv";
+            case "tsv":
+                return "text/tab-separated-values";
+            case "jsonl":
+                return "application/jsonl";
+            case "ndjson":
+                return "application/x-ndjson";
             case "json":
                 return "application/json";
+            case "jsonld":
+                return "application/ld+json";
+            case "txt":
+                return "text/plain";
             case "xml":
                 return "application/xml";
+            case "parquet":
+                return "application/parquet";
             case "xlsx":
                 return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             case "xls":

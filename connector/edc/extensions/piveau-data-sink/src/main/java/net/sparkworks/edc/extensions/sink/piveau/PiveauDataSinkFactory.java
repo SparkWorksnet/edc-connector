@@ -112,7 +112,7 @@ public class PiveauDataSinkFactory implements DataSinkFactory {
             String httpDestinationUrl = dest.getStringProperty("baseUrl");
             String authKey            = dest.getStringProperty("authKey");
 
-            return new PiveauDataSink(minioClient, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue, httpDestinationUrl, authKey, experimentPrefix);
+            return new PiveauDataSink(minioClient, endpoint, bucketName, prefix, piveauApiHandler, monitor, executorService, rabbitConnectionFactory, rabbitQueue, httpDestinationUrl, authKey, experimentPrefix);
         } catch (Exception e) {
             monitor.severe("createSink failed for request " + request.getId() + ": " + e.getMessage(), e);
             throw e;
