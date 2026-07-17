@@ -294,11 +294,11 @@
             <label for="licence">Licence <span class="req">*</span></label>
             <select id="licence">
               <option value="">— Select a licence —</option>
-              <option>Creative Commons Attribution 4.0 (CC BY 4.0)</option>
-              <option>Creative Commons CC0 1.0 (Public Domain)</option>
-              <option>Open Data Commons Attribution (ODC-By)</option>
-              <option>Open Data Commons Open Database (ODbL)</option>
-              <option>Other (specify in description)</option>
+              <option value="https://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 (CC BY 4.0)</option>
+              <option value="https://creativecommons.org/publicdomain/zero/1.0/">Creative Commons CC0 1.0 (Public Domain)</option>
+              <option value="https://opendatacommons.org/licenses/by/1-0/">Open Data Commons Attribution (ODC-By)</option>
+              <option value="https://opendatacommons.org/licenses/odbl/1-0/">Open Data Commons Open Database (ODbL)</option>
+              <option value="">Other (specify in description)</option>
             </select>
           </div>
           <div class="field">
@@ -311,11 +311,11 @@
             <label for="theme">Thematic Category <span class="req">*</span></label>
             <select id="theme">
               <option value="">— Select at least one —</option>
-              <option>Technology and Communications</option>
-              <option>Science and Research</option>
-              <option>Transport and Infrastructure</option>
-              <option>Economy and Industry</option>
-              <option>Environment</option>
+              <option value="http://publications.europa.eu/resource/authority/data-theme/TECH">Technology and Communications</option>
+              <option value="http://publications.europa.eu/resource/authority/data-theme/TECH">Science and Research</option>
+              <option value="http://publications.europa.eu/resource/authority/data-theme/TRAN">Transport and Infrastructure</option>
+              <option value="http://publications.europa.eu/resource/authority/data-theme/ECON">Economy and Industry</option>
+              <option value="http://publications.europa.eu/resource/authority/data-theme/ENVI">Environment</option>
             </select>
             <span class="hint">Select from EuroVoc / DCAT-AP vocabulary.</span>
           </div>
@@ -415,9 +415,9 @@
           <div class="field">
             <label for="access">Access Rights</label>
             <select id="access">
-              <option>Public</option>
-              <option>Restricted</option>
-              <option>Non-public</option>
+              <option value="http://publications.europa.eu/resource/authority/access-right/PUBLIC">Public</option>
+              <option value="http://publications.europa.eu/resource/authority/access-right/RESTRICTED">Restricted</option>
+              <option value="http://publications.europa.eu/resource/authority/access-right/NON_PUBLIC">Non-public</option>
             </select>
           </div>
         </div>
@@ -685,6 +685,16 @@
 
   function rv(id) { var el = document.getElementById(id); return el ? (el.value || '') : ''; }
 
+  // For <select>s whose value is now a vocabulary URI (licence/theme/access)
+  // rather than the label a user picked — show the selected option's own
+  // text in the review instead of the raw URI.
+  function rvLabel(id) {
+    var el = document.getElementById(id);
+    if (!el || el.selectedIndex < 0) return '';
+    var opt = el.options[el.selectedIndex];
+    return opt ? opt.text : '';
+  }
+
   function buildReview() {
     var tags = document.querySelectorAll('#tag-input .tag');
     var kw = Array.from(tags).map(function(t) { return t.textContent.replace('×','').trim(); }).filter(Boolean);
@@ -716,13 +726,13 @@
       + '<span class="review-key">Title</span><span class="review-val">' + (rv('title') || '—') + '</span>'
       + '<span class="review-key">Publisher</span><span class="review-val">' + (rv('publisher') || '—') + '</span>'
       + '<span class="review-key">Contact</span><span class="review-val">' + (rv('contact-name') || '—') + ' · ' + (rv('contact-email') || '') + '</span>'
-      + '<span class="review-key">Licence</span><span class="review-val">' + (rv('licence') || '—') + '</span>'
+      + '<span class="review-key">Licence</span><span class="review-val">' + (rvLabel('licence') || '—') + '</span>'
       + '<span class="review-key">Issued</span><span class="review-val">' + (rv('issued') || '—') + '</span>'
-      + '<span class="review-key">Theme</span><span class="review-val">' + (rv('theme') || '—') + '</span>'
+      + '<span class="review-key">Theme</span><span class="review-val">' + (rvLabel('theme') || '—') + '</span>'
       + '<span class="review-key">Keywords</span><span class="review-val">' + kwHtml + '</span>'
       + '<span class="review-key">Technology</span><span class="review-val">' + (rv('technology') || '—') + ' · ' + (rv('band') || '') + '</span>'
       + '<span class="review-key">Collection method</span><span class="review-val">' + (rv('method') || '—') + '</span>'
-      + '<span class="review-key">Access rights</span><span class="review-val">' + (rv('access') || '—') + '</span>'
+      + '<span class="review-key">Access rights</span><span class="review-val">' + (rvLabel('access') || '—') + '</span>'
       + '</div></div>'
       + '<div class="review-section"><h3>Data</h3><div class="review-grid">'
       + '<span class="review-key">Submission method</span><span class="review-val">' + dataMethod + '</span>'
@@ -1112,8 +1122,11 @@
       const tags = document.querySelectorAll('#tag-input .tag');
       const keywords = Array.from(tags).map(t => t.textContent.replace('×', '').trim()).filter(Boolean);
 
-      // Generate asset ID from title
-      const assetId = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
+      // Generate asset ID — a UUID, not derived from the title, so it's
+      // stable regardless of what the submitter later renames the dataset
+      // to, and never collides with another submission (matching the same
+      // change made in the hackfest's tr02_s1_register.py).
+      const assetId = crypto.randomUUID();
       const fileInput = document.getElementById('file-input');
       const dataUrl = document.getElementById('data-url').value.trim();
 
@@ -1133,16 +1146,18 @@
         }
       }
 
-      // Build metadata
+      // Build metadata — licence/theme/access now come straight from each
+      // select's own value attribute (see the <option> tags above), which
+      // holds the actual vocabulary URI, not the display label a user reads.
       const metadata = {
         'dct.description': description,
         'dct.issued': issued,
         'dct.publisher': publisher,
         'dct.license': licence,
-        'dct.accessRights': access === 'Public' ? 'http://publications.europa.eu/resource/authority/access-right/PUBLIC' : access,
+        'dct.accessRights': access,
         'dcat.keyword': keywords.join(', '),
         'dcat.theme': theme,
-        'dali.snsProjectName': '',
+        'dali.snsProjectName': '6G-DALI',
         'dali.gdprCompliant': 'true',
         'dali.fairCompliant': 'true',
       };
