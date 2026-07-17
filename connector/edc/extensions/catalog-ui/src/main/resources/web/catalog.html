@@ -38,6 +38,10 @@
         .btn-download:hover { background: #1a237e; color: #fff; }
         .btn-validate { padding: 0.35rem 0.8rem; border: 1px solid #2e7d32; background: #fff; color: #2e7d32; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-left: 0.4rem; }
         .btn-validate:hover { background: #2e7d32; color: #fff; }
+        .btn-preview { padding: 0.35rem 0.8rem; border: 1px solid #7b1fa2; background: #fff; color: #7b1fa2; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-left: 0.4rem; }
+        .btn-preview:hover { background: #7b1fa2; color: #fff; }
+        .preview-pre { white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 0.78rem; background: #f7f7fb; padding: 0.75rem; border-radius: 6px; max-height: 50vh; overflow: auto; }
+        .preview-table-wrap { max-height: 50vh; overflow: auto; }
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: center; justify-content: center; }
         .modal-overlay.active { display: flex; }
         .modal { background: #fff; border-radius: 8px; width: 90%; max-width: 640px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.25); }
@@ -153,6 +157,16 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="preview-modal-overlay" onclick="if (event.target === this) closePreviewModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="preview-modal-title">Preview</h2>
+                <button class="modal-close" onclick="closePreviewModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="preview-modal-body"></div>
+        </div>
+    </div>
+
     <script>
         const BASE = window.location.pathname.replace(/\/$/, '');
         let allAssets = [];
@@ -248,7 +262,7 @@
             const ordered = [];
             for (const root of roots) flattenTree(root, 0, null, ordered);
 
-            let html = '<table><thead><tr><th>Asset</th><th>Type</th><th>Source</th><th></th></tr></thead><tbody>';
+            let html = '<table><thead><tr><th>Asset</th><th>Type</th><th></th></tr></thead><tbody>';
             for (let i = 0; i < ordered.length; i++) {
                 const a = ordered[i].asset;
                 const depth = ordered[i].depth;
@@ -258,10 +272,6 @@
                 const pipeline = a.metadata && (a.metadata['prov.wasGeneratedBy'] || a.metadata['prov:wasGeneratedBy']);
                 const author = a.metadata && (a.metadata['prov.wasAttributedTo'] || a.metadata['prov:wasAttributedTo']);
                 const type = a.dataAddress ? a.dataAddress.type : '';
-                const source = a.dataAddress
-                    ? (a.dataAddress.prefix || a.dataAddress.baseUrl || '')
-                    : '';
-                const bucket = a.dataAddress && a.dataAddress.bucketName ? a.dataAddress.bucketName + '/' : '';
                 const hasMeta = a.metadata && Object.keys(a.metadata).length > 0;
 
                 html += '<tr class="asset-row' + (isDerived ? ' derived-row' : '') + '" onclick="toggleMeta(' + i + ')">';
@@ -284,11 +294,11 @@
                 if (hasMeta) html += '<span class="muted" style="font-size:0.7rem">&#9660; click to expand metadata</span>';
                 html += '</div></td>';
                 html += '<td><span class="badge ' + badgeClass(type) + '">' + esc(type) + '</span></td>';
-                html += '<td style="font-size:0.8rem;color:#555">' + esc(bucket + source) + '</td>';
                 html += '<td><button class="btn-download" onclick="event.stopPropagation(); downloadAsset(\'' + escAttr(a.id) + '\')">Download</button>';
+                html += '<button class="btn-preview" onclick="event.stopPropagation(); previewAsset(\'' + escAttr(a.id) + '\', \'' + escAttr(a.name || a.id) + '\')">Preview</button>';
                 html += '<button class="btn-validate" onclick="event.stopPropagation(); viewValidation(\'' + escAttr(a.id) + '\', \'' + escAttr(a.name || a.id) + '\')">Validation</button></td>';
                 html += '</tr>';
-                html += '<tr class="meta-row" id="meta-' + i + '" style="display:none"><td colspan="4">' + renderMetadataGrid(a.metadata) + '</td></tr>';
+                html += '<tr class="meta-row" id="meta-' + i + '" style="display:none"><td colspan="3">' + renderMetadataGrid(a.metadata) + '</td></tr>';
             }
             html += '</tbody></table>';
             document.getElementById('assets-table').innerHTML = html;
@@ -371,6 +381,71 @@
 
         function closeValidationModal() {
             document.getElementById('validation-modal-overlay').classList.remove('active');
+        }
+
+        function closePreviewModal() {
+            document.getElementById('preview-modal-overlay').classList.remove('active');
+        }
+
+        async function previewAsset(assetId, assetName) {
+            const overlay = document.getElementById('preview-modal-overlay');
+            const body = document.getElementById('preview-modal-body');
+            document.getElementById('preview-modal-title').textContent = 'Preview — ' + assetName;
+            body.innerHTML = '<div class="loading">Loading preview...</div>';
+            overlay.classList.add('active');
+
+            try {
+                const res = await fetch(BASE + '/api/preview?assetId=' + encodeURIComponent(assetId));
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    body.innerHTML = '<div class="error">Failed to load preview: ' + esc(err.error || res.statusText) + '</div>';
+                    return;
+                }
+                const data = await res.json();
+                body.innerHTML = renderPreview(data);
+            } catch (e) {
+                body.innerHTML = '<div class="error">Failed to load preview: ' + esc(e.message) + '</div>';
+            }
+        }
+
+        function renderPreview(data) {
+            const fileName = data.fileName || '';
+            const contentType = (data.contentType || '').toLowerCase();
+            const isCsv = contentType.includes('csv') || /\.csv$/i.test(fileName);
+            const isJson = contentType.includes('json') || /\.(json|jsonl|ndjson)$/i.test(fileName);
+
+            let html = '';
+            if (isCsv) {
+                const lines = data.content.split(/\r?\n/).filter(l => l.length > 0);
+                const rowLimit = 20;
+                const rows = lines.slice(0, rowLimit + 1).map(l => l.split(','));
+                if (rows.length > 0) {
+                    html += '<div class="preview-table-wrap"><table class="val-table"><thead><tr>';
+                    for (const h of rows[0]) html += '<th>' + esc(h) + '</th>';
+                    html += '</tr></thead><tbody>';
+                    for (const row of rows.slice(1, rowLimit + 1)) {
+                        html += '<tr>';
+                        for (const cell of row) html += '<td>' + esc(cell) + '</td>';
+                        html += '</tr>';
+                    }
+                    html += '</tbody></table></div>';
+                    if (lines.length - 1 > rowLimit) {
+                        html += '<div class="muted" style="margin-top:0.5rem">Showing first ' + rowLimit + ' of ' + (lines.length - 1) + '+ rows</div>';
+                    }
+                } else {
+                    html += '<div class="loading">Empty file</div>';
+                }
+            } else if (isJson) {
+                let pretty = data.content;
+                try { pretty = JSON.stringify(JSON.parse(data.content), null, 2); } catch (e) { /* not valid JSON as-is, e.g. truncated JSONL — show raw */ }
+                html += '<pre class="preview-pre">' + esc(pretty) + '</pre>';
+            } else {
+                html += '<pre class="preview-pre">' + esc(data.content) + '</pre>';
+            }
+            if (data.truncated) {
+                html += '<div class="muted" style="margin-top:0.5rem">Content truncated — showing only the first part of the file</div>';
+            }
+            return html;
         }
 
         async function viewValidation(assetId, assetName) {

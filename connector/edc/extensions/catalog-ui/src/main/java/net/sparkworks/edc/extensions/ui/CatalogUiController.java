@@ -40,6 +40,7 @@ public class CatalogUiController {
     private static final Set<String> SKIP_PROPS = Set.of("name", "contenttype", "description", "id");
     private static final String EDC_NS = "https://w3id.org/edc/v0.0.1/ns/";
     private static final DateTimeFormatter UTC_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("UTC"));
+    private static final int PREVIEW_MAX_BYTES = 65536;
 
     private final AssetIndex assetIndex;
     private final ContractDefinitionStore contractDefinitionStore;
@@ -362,6 +363,61 @@ public class CatalogUiController {
         } catch (Exception e) {
             monitor.severe("Failed to download asset: " + assetId, e);
             return Response.serverError().entity("Download failed: " + e.getMessage()).build();
+        }
+    }
+
+    @GET
+    @Path("catalog/api/preview")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response previewAsset(@jakarta.ws.rs.QueryParam("assetId") String assetId) {
+        try {
+            if (assetId == null || assetId.isBlank()) {
+                return Response.status(400).entity("{\"error\":\"assetId is required\"}").build();
+            }
+
+            var asset = assetIndex.findById(assetId);
+            if (asset == null) {
+                return Response.status(404).entity("{\"error\":\"asset not found: " + assetId + "\"}").build();
+            }
+
+            var da = asset.getDataAddress();
+            var type = da.getType();
+            if (!"MinioAsset".equals(type) && !"MinioFiles".equals(type)) {
+                return Response.status(400).entity("{\"error\":\"preview is only supported for MinIO-backed assets\"}").build();
+            }
+
+            var endpoint = da.getStringProperty("endpoint");
+            var bucket = da.getStringProperty("bucketName");
+            var accessKey = da.getStringProperty("accessKey");
+            var secretKey = da.getStringProperty("secretKey");
+            var prefix = da.getStringProperty("prefix");
+
+            var client = MinioClient.builder().endpoint(endpoint).credentials(accessKey, secretKey).build();
+
+            // Reads at most PREVIEW_MAX_BYTES+1 bytes off the front of the object
+            // (the "+1" is just to detect truncation) rather than a ranged GET —
+            // simpler, and fine for the small demo files this hackfest deals with.
+            byte[] bytes;
+            try (var stream = client.getObject(GetObjectArgs.builder().bucket(bucket).object(prefix).build())) {
+                bytes = stream.readNBytes(PREVIEW_MAX_BYTES + 1);
+            }
+            boolean truncated = bytes.length > PREVIEW_MAX_BYTES;
+            String content = new String(
+                    truncated ? java.util.Arrays.copyOf(bytes, PREVIEW_MAX_BYTES) : bytes,
+                    StandardCharsets.UTF_8
+            );
+
+            var fileName = prefix != null && prefix.contains("/") ? prefix.substring(prefix.lastIndexOf('/') + 1) : prefix;
+
+            ObjectNode result = MAPPER.createObjectNode();
+            result.put("fileName", fileName);
+            result.put("contentType", getProperty(asset, "contenttype"));
+            result.put("content", content);
+            result.put("truncated", truncated);
+            return Response.ok(MAPPER.writeValueAsString(result)).build();
+        } catch (Exception e) {
+            monitor.severe("Failed to preview asset: " + assetId, e);
+            return jsonError(e);
         }
     }
 
