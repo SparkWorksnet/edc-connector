@@ -38,10 +38,6 @@
         .btn-download:hover { background: #1a237e; color: #fff; }
         .btn-validate { padding: 0.35rem 0.8rem; border: 1px solid #2e7d32; background: #fff; color: #2e7d32; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
         .btn-validate:hover { background: #2e7d32; color: #fff; }
-        .btn-validate.val-ok { border-color: #2e7d32; background: #e8f5e9; color: #2e7d32; }
-        .btn-validate.val-ok:hover { background: #2e7d32; color: #fff; }
-        .btn-validate.val-bad { border-color: #c62828; background: #ffebee; color: #c62828; }
-        .btn-validate.val-bad:hover { background: #c62828; color: #fff; }
         .btn-preview { padding: 0.35rem 0.8rem; border: 1px solid #7b1fa2; background: #fff; color: #7b1fa2; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-left: 0.4rem; }
         .btn-preview:hover { background: #7b1fa2; color: #fff; }
         .preview-pre { white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 0.78rem; background: #f7f7fb; padding: 0.75rem; border-radius: 6px; max-height: 50vh; overflow: auto; }
@@ -298,7 +294,7 @@
                 if (hasMeta) html += '<span class="muted" style="font-size:0.7rem">&#9660; click to expand metadata</span>';
                 html += '</div></td>';
                 html += '<td><span class="badge ' + badgeClass(type) + '">' + esc(type) + '</span></td>';
-                html += '<td><button class="btn-validate" id="val-btn-' + i + '" onclick="event.stopPropagation(); viewValidation(\'' + escAttr(a.id) + '\', \'' + escAttr(a.name || a.id) + '\')">Validation</button>';
+                html += '<td><button class="btn-validate" onclick="event.stopPropagation(); viewValidation(\'' + escAttr(a.id) + '\', \'' + escAttr(a.name || a.id) + '\')">Validation</button>';
                 html += '<button class="btn-preview" onclick="event.stopPropagation(); previewAsset(\'' + escAttr(a.id) + '\', \'' + escAttr(a.name || a.id) + '\')">Preview</button>';
                 html += '<button class="btn-download" onclick="event.stopPropagation(); downloadAsset(\'' + escAttr(a.id) + '\')">Download</button></td>';
                 html += '</tr>';
@@ -306,10 +302,6 @@
             }
             html += '</tbody></table>';
             document.getElementById('assets-table').innerHTML = html;
-
-            for (let i = 0; i < ordered.length; i++) {
-                loadValidationBadge(ordered[i].asset.id, 'val-btn-' + i);
-            }
         }
 
         function renderAgreements(agreements) {
@@ -454,40 +446,6 @@
                 html += '<div class="muted" style="margin-top:0.5rem">Content truncated — showing only the first part of the file</div>';
             }
             return html;
-        }
-
-        const validationCache = {};
-
-        async function loadValidationBadge(assetId, btnId) {
-            if (validationCache[assetId] !== undefined) {
-                applyValidationBadge(btnId, validationCache[assetId]);
-                return;
-            }
-            try {
-                const res = await fetch(BASE + '/api/validation?assetId=' + encodeURIComponent(assetId));
-                if (res.ok) {
-                    const report = await res.json();
-                    const stats = report.statistics || {};
-                    validationCache[assetId] = {
-                        found: true,
-                        success: !!report.success,
-                        passed: stats.successful_expectations || 0,
-                        total: stats.evaluated_expectations || 0
-                    };
-                } else {
-                    validationCache[assetId] = { found: false };
-                }
-            } catch (e) {
-                validationCache[assetId] = { found: false };
-            }
-            applyValidationBadge(btnId, validationCache[assetId]);
-        }
-
-        function applyValidationBadge(btnId, info) {
-            const btn = document.getElementById(btnId);
-            if (!btn || !info || !info.found) return;
-            btn.textContent = 'Validation ' + info.passed + '/' + info.total;
-            btn.classList.add(info.success ? 'val-ok' : 'val-bad');
         }
 
         async function viewValidation(assetId, assetName) {
