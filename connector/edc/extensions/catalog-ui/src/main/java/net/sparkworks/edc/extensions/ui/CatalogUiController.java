@@ -125,7 +125,15 @@ public class CatalogUiController {
                         key = key.substring(EDC_NS.length());
                     }
                     if (SKIP_PROPS.contains(key)) continue;
-                    meta.put(key, String.valueOf(entry.getValue()));
+                    Object value = entry.getValue();
+                    // Structured properties (e.g. "semantic_description", a JSON-LD
+                    // literal - see submit-dataset.html) need to reach the UI as real
+                    // JSON, not Java's Map/List toString() - only flatten plain scalars.
+                    if (value instanceof java.util.Map || value instanceof java.util.List) {
+                        meta.set(key, MAPPER.valueToTree(value));
+                    } else {
+                        meta.put(key, String.valueOf(value));
+                    }
                 }
                 node.set("metadata", meta);
 

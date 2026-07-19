@@ -225,7 +225,28 @@
 
         function renderMetadataGrid(metadata) {
             if (!metadata || Object.keys(metadata).length === 0) return '<span class="muted">No metadata</span>';
-            const sections = categorizeMetadata(metadata);
+
+            // "semantic_description" bundles all of a dataset's descriptive
+            // metadata into one structured JSON-LD object (see
+            // submit-dataset.html) instead of each field being its own flat
+            // dotted property — flatten its own namespaced keys (skipping
+            // @context) back in here so they still get bucketed by
+            // categorizeMetadata like any other dct:/dcat:/dali:/schema: key.
+            // Assets registered elsewhere (e.g. the hackfest scripts) that
+            // still use flat dotted keys directly keep working unchanged.
+            const flat = Object.assign({}, metadata);
+            const sd = flat['semantic_description'];
+            delete flat['semantic_description'];
+            if (sd && typeof sd === 'object') {
+                for (const [k, v] of Object.entries(sd)) {
+                    if (k === '@context') continue;
+                    flat[k] = v;
+                }
+            }
+
+            if (Object.keys(flat).length === 0) return '<span class="muted">No metadata</span>';
+
+            const sections = categorizeMetadata(flat);
             let html = '<div class="meta-grid">';
             for (const [section, items] of Object.entries(sections)) {
                 if (items.length === 0) continue;

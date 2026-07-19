@@ -1146,28 +1146,39 @@
         }
       }
 
-      // Build metadata — licence/theme/access now come straight from each
-      // select's own value attribute (see the <option> tags above), which
-      // holds the actual vocabulary URI, not the display label a user reads.
-      const metadata = {
-        'dct.description': description,
-        'dct.issued': issued,
-        'dct.publisher': publisher,
-        'dct.license': licence,
-        'dct.accessRights': access,
-        'dcat.keyword': keywords.join(', '),
-        'dcat.theme': theme,
-        'dali.snsProjectName': '6G-DALI',
-        'dali.gdprCompliant': 'true',
-        'dali.fairCompliant': 'true',
+      // All descriptive metadata is bundled into a single structured
+      // "semantic_description" object — proper namespaced (dct:/dcat:/dali:/
+      // schema:) keys under one JSON-LD-ish property, instead of each field
+      // being its own flat "dct.foo"-style dotted property on the asset.
+      // Licence/theme/access come straight from each select's own value
+      // attribute (see the <option> tags above), which holds the actual
+      // vocabulary URI, not the display label a user reads. The Catalog UI
+      // renders straight from this field (see catalog.html's renderMetadataGrid).
+      const semanticDescription = {
+        '@context': {
+          'dct': 'http://purl.org/dc/terms/',
+          'dcat': 'http://www.w3.org/ns/dcat#',
+          'dali': 'https://dali-project.eu/ns#',
+          'schema': 'https://schema.org/',
+        },
+        'dct:description': description,
+        'dct:issued': issued,
+        'dct:publisher': publisher,
+        'dct:license': licence,
+        'dct:accessRights': access,
+        'dcat:keyword': keywords.join(', '),
+        'dcat:theme': theme,
+        'dali:snsProjectName': '6G-DALI',
+        'dali:gdprCompliant': 'true',
+        'dali:fairCompliant': 'true',
       };
 
-      if (technology) metadata['dali.ranNewRadioType'] = technology;
-      if (band) metadata['dali.ranFrequencyBand'] = band;
-      if (method) metadata['schema.measurementTechnique'] = method;
-      if (columns) metadata['schema.variableMeasured'] = columns;
-      if (provenance) metadata['dct.provenance'] = provenance;
-      if (contactName) metadata['dcat.contactPoint'] = contactName + ' <' + contactEmail + '>';
+      if (technology) semanticDescription['dali:ranNewRadioType'] = technology;
+      if (band) semanticDescription['dali:ranFrequencyBand'] = band;
+      if (method) semanticDescription['schema:measurementTechnique'] = method;
+      if (columns) semanticDescription['schema:variableMeasured'] = columns;
+      if (provenance) semanticDescription['dct:provenance'] = provenance;
+      if (contactName) semanticDescription['dcat:contactPoint'] = contactName + ' <' + contactEmail + '>';
 
       // Register asset on EDC
       btn.textContent = 'Registering asset...';
@@ -1175,7 +1186,7 @@
       const assetBody = {
         '@context': {'@vocab': 'https://w3id.org/edc/v0.0.1/ns/'},
         '@id': assetId,
-        'properties': Object.assign({ name: title, contenttype: 'text/csv' }, metadata),
+        'properties': { name: title, contenttype: 'text/csv', semantic_description: semanticDescription },
         'dataAddress': {
           type: 'MinioAsset',
           endpoint: S3_INTERNAL,
