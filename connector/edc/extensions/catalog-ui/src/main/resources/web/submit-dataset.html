@@ -1146,20 +1146,26 @@
         }
       }
 
-      // All descriptive metadata is bundled into a single structured
-      // "semantic_description" object — proper namespaced (dct:/dcat:/dali:/
-      // schema:) keys under one property, instead of each field being its
-      // own flat "dct.foo"-style dotted property on the asset. No "@context"
-      // in here on purpose: EDC's own JSON-LD processing picks up a nested
-      // @context and expands these compact IRIs into full URIs (and wraps
-      // every value as a {"@value": ...} node) by the time it round-trips
-      // through the catalogue — leaving it out keeps "dct:description" etc.
-      // as plain literal keys. Licence/theme/access come straight from each
-      // select's own value attribute (see the <option> tags above), which
-      // holds the actual vocabulary URI, not the display label a user reads.
-      // The Catalog UI renders straight from this field (see catalog.html's
-      // renderMetadataGrid).
+      // All descriptive metadata is bundled into one real JSON-LD document —
+      // its own "@context" (so dct:/dcat:/dali:/schema: actually resolve to
+      // real IRIs, not just namespace-flavored key names), an "@id" anchoring
+      // it to this dataset's asset id, and an "@type". It's stored as an
+      // *opaque JSON string*, not a nested object: EDC's own JSON-LD engine
+      // JSON-LD-processes "properties" and, given a nested object with its
+      // own "@context", expands it against the whole surrounding document —
+      // mangling keys into full URIs and wrapping every value into a
+      // {"@value": ...} node. Stringifying it means EDC just sees an opaque
+      // string property and leaves it untouched; the Catalog UI JSON.parses
+      // it back out for display (see catalog.html's renderMetadataGrid).
       const semanticDescription = {
+        '@context': {
+          'dct': 'http://purl.org/dc/terms/',
+          'dcat': 'http://www.w3.org/ns/dcat#',
+          'dali': 'https://dali-project.eu/ns#',
+          'schema': 'https://schema.org/',
+        },
+        '@id': 'urn:dataset:' + assetId,
+        '@type': 'dcat:Dataset',
         'dct:description': description,
         'dct:issued': issued,
         'dct:publisher': publisher,
@@ -1185,7 +1191,7 @@
       const assetBody = {
         '@context': {'@vocab': 'https://w3id.org/edc/v0.0.1/ns/'},
         '@id': assetId,
-        'properties': { name: title, contenttype: 'text/csv', semantic_description: semanticDescription },
+        'properties': { name: title, contenttype: 'text/csv', semantic_description: JSON.stringify(semanticDescription) },
         'dataAddress': {
           type: 'MinioAsset',
           endpoint: S3_INTERNAL,

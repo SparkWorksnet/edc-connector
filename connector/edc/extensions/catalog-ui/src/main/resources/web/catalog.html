@@ -228,19 +228,24 @@
             if (!metadata || Object.keys(metadata).length === 0) return '<span class="muted">No metadata</span>';
 
             // "semantic_description" bundles all of a dataset's descriptive
-            // metadata into one structured object (see submit-dataset.html)
-            // instead of each field being its own flat dotted property —
-            // rendered as its own pretty-printed block rather than flattened
-            // into the dct:/dcat:/dali:/schema: grid below (whose keys/values
-            // are assumed to be plain scalars, one property per row).
+            // metadata into one real JSON-LD document (@context/@id/@type —
+            // see submit-dataset.html), stored as an opaque JSON *string* so
+            // EDC's own JSON-LD engine never touches it — parsed back out
+            // here and rendered as its own pretty-printed block rather than
+            // flattened into the dct:/dcat:/dali:/schema: grid below (whose
+            // keys/values are assumed to be plain scalars, one per row).
             const rest = Object.assign({}, metadata);
-            const sd = rest['semantic_description'];
+            const sdRaw = rest['semantic_description'];
             delete rest['semantic_description'];
 
             let html = '';
-            if (sd !== undefined) {
-                html += '<div class="meta-section">Semantic Description</div>';
-                html += '<pre class="semantic-pre">' + esc(JSON.stringify(sd, null, 2)) + '</pre>';
+            if (sdRaw !== undefined) {
+                let sd = sdRaw;
+                if (typeof sdRaw === 'string') {
+                    try { sd = JSON.parse(sdRaw); } catch (e) { sd = sdRaw; }
+                }
+                html += '<div class="meta-section">Semantic Description (JSON-LD)</div>';
+                html += '<pre class="semantic-pre">' + esc(typeof sd === 'string' ? sd : JSON.stringify(sd, null, 2)) + '</pre>';
             }
 
             if (Object.keys(rest).length > 0) {
