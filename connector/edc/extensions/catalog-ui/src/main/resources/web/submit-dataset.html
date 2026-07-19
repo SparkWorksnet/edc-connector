@@ -434,6 +434,15 @@
             <span class="hint">e.g. Jane Smith (data curator), ACME Labs (data collector)</span>
           </div>
         </div>
+        <div class="field-row full">
+          <div class="field">
+            <label style="flex-direction:row;align-items:center;gap:8px;font-weight:500">
+              <input type="checkbox" id="contains-pii" style="width:15px;height:15px;accent-color:#1a237e" />
+              This dataset contains Personally Identifiable Information (PII)
+            </label>
+            <span class="hint">Required GAIA-X declaration (gax:containsPII). Leave unchecked only if you have verified the data contains no PII.</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1064,11 +1073,16 @@
   }
 
   // ── EDC Configuration ────────────────────────────────────────────────────
-  // Auto-detect: the submit page is served from the default HTTP port,
-  // the management API is on port + 1 (e.g., 18180 → 18181, 28180 → 28181)
+  // Auto-detect: the submit page is served from the default HTTP port, the
+  // management API is on port + 1 and the DSP protocol API on port + 2
+  // (e.g., 18180 → 18181/18182, 21000 → 21001/21002) — matches this
+  // connector's own port layout (see e.g. participant/docker-compose.yml's
+  // WEB_HTTP_MANAGEMENT_PORT/WEB_HTTP_PROTOCOL_PORT).
   const httpPort = parseInt(window.location.port) || 80;
   const mgmtPort = httpPort + 1;
+  const protocolPort = httpPort + 2;
   const EDC_MGMT = 'http://' + window.location.hostname + ':' + mgmtPort;
+  const EDC_PROTOCOL = 'http://' + window.location.hostname + ':' + protocolPort + '/protocol';
   const S3_ENDPOINT = 'http://' + window.location.hostname + ':9000';
   const S3_INTERNAL = 'http://rustfs:9000';
   const S3_ACCESS = 'participant-admin';
@@ -1106,9 +1120,12 @@
       const title = document.getElementById('title').value.trim();
       const description = document.getElementById('description').value.trim();
       const publisher = document.getElementById('publisher').value.trim();
+      const publisherUrl = document.getElementById('publisher-url').value.trim();
       const licence = document.getElementById('licence').value;
       const issued = document.getElementById('issued').value;
       const theme = document.getElementById('theme').value;
+      const dateStart = document.getElementById('date-start').value;
+      const dateEnd = document.getElementById('date-end').value;
       const technology = document.getElementById('technology').value;
       const band = document.getElementById('band').value;
       const method = document.getElementById('method').value;
@@ -1117,6 +1134,10 @@
       const contactName = document.getElementById('contact-name').value.trim();
       const contactEmail = document.getElementById('contact-email').value.trim();
       const access = document.getElementById('access').value;
+      const identifier = document.getElementById('identifier').value.trim();
+      const related = document.getElementById('related').value.trim();
+      const contributors = document.getElementById('contributors').value.trim();
+      const containsPii = document.getElementById('contains-pii').checked;
 
       // Collect keywords
       const tags = document.querySelectorAll('#tag-input .tag');
@@ -1131,11 +1152,22 @@
       const dataUrl = document.getElementById('data-url').value.trim();
 
       let fileKey = assetId + '.csv';
+      let fileSize = null;
+      let fileChecksum = null;
 
       // Upload file if provided
       if (fileInput.files.length > 0) {
         const file = fileInput.files[0];
         fileKey = assetId + '/' + file.name;
+        fileSize = file.size;
+
+        // spdx:checksum (§5.2/§5.6) — only computable for an uploaded file;
+        // a link submission's bytes aren't fetched by this browser (and may
+        // require credentials/CORS this page has no business handling).
+        btn.textContent = 'Hashing file...';
+        const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        fileChecksum = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+
         btn.textContent = 'Uploading file...';
         const uploaded = await uploadFileToS3(file, fileKey);
         if (!uploaded) {
@@ -1147,43 +1179,154 @@
       }
 
       // All descriptive metadata is bundled into one real JSON-LD document —
-      // its own "@context" (so dct:/dcat:/dali:/schema: actually resolve to
-      // real IRIs, not just namespace-flavored key names), an "@id" anchoring
-      // it to this dataset's asset id, and an "@type". It's stored as an
-      // *opaque JSON string*, not a nested object: EDC's own JSON-LD engine
-      // JSON-LD-processes "properties" and, given a nested object with its
-      // own "@context", expands it against the whole surrounding document —
-      // mangling keys into full URIs and wrapping every value into a
-      // {"@value": ...} node. Stringifying it means EDC just sees an opaque
-      // string property and leaves it untouched; the Catalog UI JSON.parses
-      // it back out for display (see catalog.html's renderMetadataGrid).
+      // its own "@context" (so dct:/dcat:/dali:/schema:/gax:/prov:/foaf:/vcard:/
+      // adms: actually resolve to real IRIs, not just namespace-flavored key
+      // names), an "@id" anchoring it to this dataset's asset id, and an
+      // "@type". It's stored as an *opaque JSON string*, not a nested object:
+      // EDC's own JSON-LD engine JSON-LD-processes "properties" and, given a
+      // nested object with its own "@context", expands it against the whole
+      // surrounding document — mangling keys into full URIs and wrapping
+      // every value into a {"@value": ...} node. Stringifying it means EDC
+      // just sees an opaque string property and leaves it untouched; the
+      // Catalog UI JSON.parses it back out for display (see catalog.html's
+      // renderMetadataGrid).
+      //
+      // Structured per 6G-DALI-Metadata-Application-Profile.md §5.1-5.6:
+      //   - dct:publisher/dct:creator are foaf:Organization nodes, not bare
+      //     strings (§5.3.A). This form doesn't collect a separate creator,
+      //     so the publisher org is reused for both.
+      //   - dcat:contactPoint is a vcard node (§5.3.A), not "name <email>".
+      //   - RAN fields (dali:ranNewRadioType/ranFrequencyBand) live under a
+      //     nested dali:testbedContext / dali:TestbedContext node (§5.3.C) —
+      //     rdfs:domain in ontology/dali.ttl is dali:TestbedContext, not
+      //     dcat:Dataset.
+      //   - schema:variableMeasured/measurementTechnique are moved onto the
+      //     dcat:Distribution, per the explicit §5.3/§5.6 note that they are
+      //     "not dataset-level fields".
+      //   - dct:provenance is a dct:ProvenanceStatement node with
+      //     prov:wasAttributedTo, following §5.4's own pattern for datasets
+      //     "uploaded directly from testbeds" (this form's exact scenario) —
+      //     not the full prov:Activity chain, which only applies to
+      //     DataOps-derived datasets, and not prov:qualifiedAttribution,
+      //     which needs a role-qualified structure this form has no input for.
+      //   - The GAIA-X block (§5.2) is added: gax:containsPII and
+      //     gax:producedBy are Mandatory there. gax:legalBasis is
+      //     deliberately omitted — inventing a legal basis per submission
+      //     would be actively misleading, not just incomplete.
+      const publisherOrg = {
+        '@type': 'foaf:Organization',
+        'foaf:name': publisher,
+      };
+      if (publisherUrl) publisherOrg['foaf:homepage'] = publisherUrl;
+
       const semanticDescription = {
         '@context': {
           'dct': 'http://purl.org/dc/terms/',
           'dcat': 'http://www.w3.org/ns/dcat#',
           'dali': 'https://dali-project.eu/ns#',
           'schema': 'https://schema.org/',
+          'gax': 'https://w3id.org/gaia-x/development#',
+          'prov': 'http://www.w3.org/ns/prov#',
+          'foaf': 'http://xmlns.com/foaf/0.1/',
+          'vcard': 'http://www.w3.org/2006/vcard/ns#',
+          'adms': 'http://www.w3.org/ns/adms#',
+          'rdfs': 'http://www.w3.org/2000/01/rdf-schema#',
+          'skos': 'http://www.w3.org/2004/02/skos/core#',
+          'spdx': 'http://spdx.org/rdf/terms#',
         },
         '@id': 'urn:dataset:' + assetId,
-        '@type': 'dcat:Dataset',
+        '@type': ['dcat:Dataset', 'gax:DataResource'],
         'dct:description': description,
         'dct:issued': issued,
-        'dct:publisher': publisher,
+        'dct:publisher': publisherOrg,
+        'dct:creator': publisherOrg,
         'dct:license': licence,
         'dct:accessRights': access,
-        'dcat:keyword': keywords.join(', '),
+        'dcat:keyword': keywords,
         'dcat:theme': theme,
+        'dct:language': 'http://publications.europa.eu/resource/authority/language/ENG',
+        'adms:version': '1.0',
+        'dct:conformsTo': 'https://www.go-fair.org/fair-principles/',
+        'dcat:landingPage': window.location.origin + '/api/catalog',
         'dali:snsProjectName': '6G-DALI',
         'dali:gdprCompliant': 'true',
         'dali:fairCompliant': 'true',
+        // GAIA-X Trust Framework (§5.2) — containsPII/producedBy are Mandatory.
+        'gax:containsPII': containsPii,
+        'gax:producedBy': publisherOrg,
+        'gax:exposedThrough': EDC_PROTOCOL,
+        'gax:policy': 'urn:policy:open-policy',
       };
 
-      if (technology) semanticDescription['dali:ranNewRadioType'] = technology;
-      if (band) semanticDescription['dali:ranFrequencyBand'] = band;
-      if (method) semanticDescription['schema:measurementTechnique'] = method;
-      if (columns) semanticDescription['schema:variableMeasured'] = columns;
-      if (provenance) semanticDescription['dct:provenance'] = provenance;
-      if (contactName) semanticDescription['dcat:contactPoint'] = contactName + ' <' + contactEmail + '>';
+      if (contactName) {
+        semanticDescription['dcat:contactPoint'] = {
+          '@type': 'vcard:Individual',
+          'vcard:fn': contactName,
+          'vcard:hasEmail': contactEmail ? 'mailto:' + contactEmail : undefined,
+        };
+      }
+
+      if (dateStart || dateEnd) {
+        semanticDescription['dct:temporal'] = {
+          '@type': 'dct:PeriodOfTime',
+          'dcat:startDate': dateStart || undefined,
+          'dcat:endDate': dateEnd || undefined,
+        };
+      }
+
+      if (technology || band) {
+        semanticDescription['dali:testbedContext'] = {
+          '@type': 'dali:TestbedContext',
+          'dali:ranNewRadioType': technology || undefined,
+          'dali:ranFrequencyBand': band || undefined,
+        };
+      }
+
+      if (provenance) {
+        semanticDescription['dct:provenance'] = {
+          '@type': 'dct:ProvenanceStatement',
+          'rdfs:label': provenance,
+          'prov:wasAttributedTo': publisherOrg,
+        };
+      }
+
+      if (identifier) {
+        semanticDescription['adms:identifier'] = { '@type': 'adms:Identifier', 'skos:notation': identifier };
+      }
+      if (related) semanticDescription['dct:relation'] = related;
+      if (contributors) semanticDescription['dct:contributor'] = contributors.split(',').map(c => c.trim()).filter(Boolean);
+      if (fileChecksum) semanticDescription['spdx:checksum'] = fileChecksum;
+
+      // The dataset's actual file, as a proper dcat:Distribution — without
+      // this, the JSON-LD only described the dataset's metadata, never the
+      // data itself. dcat:accessURL is this connector's own DSP protocol
+      // entrypoint (negotiate a contract against it to pull the file, same
+      // as any other EDC consumer would, hence dali:connectorType —
+      // "dspaceconnector" per §5.6's own definition of that field);
+      // dcat:downloadURL is where the bytes actually resolve — the Catalog
+      // UI's own download endpoint for an uploaded file, or the provided URL
+      // itself for a link submission. schema:variableMeasured/
+      // measurementTechnique live here, not on the dataset (see comment above).
+      const isUrlSubmission = !fileInput.files.length && dataUrl;
+      const distribution = {
+        '@type': 'dcat:Distribution',
+        'dct:title': title + ' (distribution)',
+        'dct:identifier': assetId,
+        'dali:assetId': assetId,
+        'dali:connectorType': 'dspaceconnector',
+        'dct:format': 'http://publications.europa.eu/resource/authority/file-type/CSV',
+        'dcat:mediaType': 'text/csv',
+        'dct:license': licence,
+        'dcat:accessURL': EDC_PROTOCOL,
+        'dcat:downloadURL': isUrlSubmission
+          ? dataUrl
+          : window.location.origin + '/api/catalog/api/download?assetId=' + encodeURIComponent(assetId),
+      };
+      if (fileSize !== null) distribution['dcat:byteSize'] = fileSize;
+      if (fileChecksum) distribution['spdx:checksum'] = fileChecksum;
+      if (method) distribution['schema:measurementTechnique'] = method;
+      if (columns) distribution['schema:variableMeasured'] = columns;
+      semanticDescription['dcat:distribution'] = distribution;
 
       // Register asset on EDC
       btn.textContent = 'Registering asset...';
