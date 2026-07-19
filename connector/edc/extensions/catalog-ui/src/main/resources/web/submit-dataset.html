@@ -1148,19 +1148,18 @@
 
       // All descriptive metadata is bundled into a single structured
       // "semantic_description" object — proper namespaced (dct:/dcat:/dali:/
-      // schema:) keys under one JSON-LD-ish property, instead of each field
-      // being its own flat "dct.foo"-style dotted property on the asset.
-      // Licence/theme/access come straight from each select's own value
-      // attribute (see the <option> tags above), which holds the actual
-      // vocabulary URI, not the display label a user reads. The Catalog UI
-      // renders straight from this field (see catalog.html's renderMetadataGrid).
+      // schema:) keys under one property, instead of each field being its
+      // own flat "dct.foo"-style dotted property on the asset. No "@context"
+      // in here on purpose: EDC's own JSON-LD processing picks up a nested
+      // @context and expands these compact IRIs into full URIs (and wraps
+      // every value as a {"@value": ...} node) by the time it round-trips
+      // through the catalogue — leaving it out keeps "dct:description" etc.
+      // as plain literal keys. Licence/theme/access come straight from each
+      // select's own value attribute (see the <option> tags above), which
+      // holds the actual vocabulary URI, not the display label a user reads.
+      // The Catalog UI renders straight from this field (see catalog.html's
+      // renderMetadataGrid).
       const semanticDescription = {
-        '@context': {
-          'dct': 'http://purl.org/dc/terms/',
-          'dcat': 'http://www.w3.org/ns/dcat#',
-          'dali': 'https://dali-project.eu/ns#',
-          'schema': 'https://schema.org/',
-        },
         'dct:description': description,
         'dct:issued': issued,
         'dct:publisher': publisher,

@@ -42,6 +42,7 @@
         .btn-preview:hover { background: #7b1fa2; color: #fff; }
         .preview-pre { white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 0.78rem; background: #f7f7fb; padding: 0.75rem; border-radius: 6px; max-height: 50vh; overflow: auto; }
         .preview-table-wrap { max-height: 50vh; overflow: auto; }
+        .semantic-pre { white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.78rem; background: #f7f7fb; color: #1a237e; padding: 0.75rem; border-radius: 6px; max-height: 40vh; overflow: auto; margin-bottom: 0.75rem; border: 1px solid #e0e4f0; }
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: center; justify-content: center; }
         .modal-overlay.active { display: flex; }
         .modal { background: #fff; border-radius: 8px; width: 90%; max-width: 640px; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.25); }
@@ -227,36 +228,35 @@
             if (!metadata || Object.keys(metadata).length === 0) return '<span class="muted">No metadata</span>';
 
             // "semantic_description" bundles all of a dataset's descriptive
-            // metadata into one structured JSON-LD object (see
-            // submit-dataset.html) instead of each field being its own flat
-            // dotted property — flatten its own namespaced keys (skipping
-            // @context) back in here so they still get bucketed by
-            // categorizeMetadata like any other dct:/dcat:/dali:/schema: key.
-            // Assets registered elsewhere (e.g. the hackfest scripts) that
-            // still use flat dotted keys directly keep working unchanged.
-            const flat = Object.assign({}, metadata);
-            const sd = flat['semantic_description'];
-            delete flat['semantic_description'];
-            if (sd && typeof sd === 'object') {
-                for (const [k, v] of Object.entries(sd)) {
-                    if (k === '@context') continue;
-                    flat[k] = v;
-                }
+            // metadata into one structured object (see submit-dataset.html)
+            // instead of each field being its own flat dotted property —
+            // rendered as its own pretty-printed block rather than flattened
+            // into the dct:/dcat:/dali:/schema: grid below (whose keys/values
+            // are assumed to be plain scalars, one property per row).
+            const rest = Object.assign({}, metadata);
+            const sd = rest['semantic_description'];
+            delete rest['semantic_description'];
+
+            let html = '';
+            if (sd !== undefined) {
+                html += '<div class="meta-section">Semantic Description</div>';
+                html += '<pre class="semantic-pre">' + esc(JSON.stringify(sd, null, 2)) + '</pre>';
             }
 
-            if (Object.keys(flat).length === 0) return '<span class="muted">No metadata</span>';
-
-            const sections = categorizeMetadata(flat);
-            let html = '<div class="meta-grid">';
-            for (const [section, items] of Object.entries(sections)) {
-                if (items.length === 0) continue;
-                html += '<div class="meta-section">' + esc(section) + '</div>';
-                for (const [key, val] of items) {
-                    html += '<div class="meta-item"><span class="meta-key">' + esc(key) + ':</span><span class="meta-val">' + esc(val) + '</span></div>';
+            if (Object.keys(rest).length > 0) {
+                const sections = categorizeMetadata(rest);
+                html += '<div class="meta-grid">';
+                for (const [section, items] of Object.entries(sections)) {
+                    if (items.length === 0) continue;
+                    html += '<div class="meta-section">' + esc(section) + '</div>';
+                    for (const [key, val] of items) {
+                        html += '<div class="meta-item"><span class="meta-key">' + esc(key) + ':</span><span class="meta-val">' + esc(val) + '</span></div>';
+                    }
                 }
+                html += '</div>';
             }
-            html += '</div>';
-            return html;
+
+            return html || '<span class="muted">No metadata</span>';
         }
 
         function toggleMeta(idx) {
