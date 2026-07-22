@@ -1,5 +1,6 @@
 package net.sparkworks.edc.extensions.ui;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -34,7 +35,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.Base64;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -399,8 +399,7 @@ public class CatalogUiController {
             }
 
             String dagId = "hackfest_validate_dataset";
-            String auth = "Basic " + Base64.getEncoder().encodeToString(
-                    (AIRFLOW_USER + ":" + AIRFLOW_PASSWORD).getBytes(StandardCharsets.UTF_8));
+            String auth = "Bearer " + fetchAirflowToken();
 
             // Airflow pauses every DAG it discovers until someone unpauses it (in
             // the UI or via this same API) - unpause first so triggering works
@@ -435,6 +434,35 @@ public class CatalogUiController {
             monitor.severe("Failed to trigger validation DAG for asset: " + assetId, e);
             return jsonError(e);
         }
+    }
+
+    /**
+     * Airflow 3's Simple Auth Manager (see participant/docker-compose.yml's
+     * AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS) doesn't accept HTTP Basic
+     * Auth directly on the /api/v2 REST API the way Airflow 2's auth
+     * backends did - it's JWT-based, so username/password first has to be
+     * exchanged for a bearer token via its login endpoint.
+     */
+    private String fetchAirflowToken() throws Exception {
+        ObjectNode creds = MAPPER.createObjectNode();
+        creds.put("username", AIRFLOW_USER);
+        creds.put("password", AIRFLOW_PASSWORD);
+
+        HttpRequest tokenReq = HttpRequest.newBuilder()
+                .uri(URI.create(AIRFLOW_URL + "/auth/token"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(creds)))
+                .build();
+        HttpResponse<String> tokenResp = HTTP_CLIENT.send(tokenReq, HttpResponse.BodyHandlers.ofString());
+        if (tokenResp.statusCode() < 200 || tokenResp.statusCode() >= 300) {
+            throw new RuntimeException("Airflow login failed: " + tokenResp.statusCode() + " " + tokenResp.body());
+        }
+        JsonNode json = MAPPER.readTree(tokenResp.body());
+        JsonNode token = json.get("access_token");
+        if (token == null) {
+            throw new RuntimeException("Airflow login response had no access_token: " + tokenResp.body());
+        }
+        return token.asText();
     }
 
     @GET
