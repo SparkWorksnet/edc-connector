@@ -416,6 +416,9 @@ public class CatalogUiController {
             conf.put("asset_id", assetId);
             ObjectNode body = MAPPER.createObjectNode();
             body.set("conf", conf);
+            // Airflow 3's DAG-run creation schema requires logical_date even for
+            // a manually-triggered, unscheduled DAG - "now" is the usual value.
+            body.put("logical_date", Instant.now().toString());
 
             HttpRequest trigger = HttpRequest.newBuilder()
                     .uri(URI.create(AIRFLOW_URL + "/api/v2/dags/" + dagId + "/dagRuns"))
