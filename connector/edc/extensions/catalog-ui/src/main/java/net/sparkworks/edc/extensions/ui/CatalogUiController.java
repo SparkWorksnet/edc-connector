@@ -49,7 +49,13 @@ public class CatalogUiController {
     private static final String AIRFLOW_URL = System.getenv().getOrDefault("AIRFLOW_URL", "http://airflow:8080");
     private static final String AIRFLOW_USER = System.getenv().getOrDefault("AIRFLOW_USER", "airflow");
     private static final String AIRFLOW_PASSWORD = System.getenv().getOrDefault("AIRFLOW_PASSWORD", "airflow");
-    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+    // Forced to HTTP/1.1: the default client negotiates HTTP/2 via cleartext
+    // "Upgrade: h2c" headers, which Airflow's Uvicorn-based API server doesn't
+    // handle and rejects outright ("Invalid HTTP request received.") instead
+    // of just ignoring the upgrade attempt.
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .build();
 
     private final AssetIndex assetIndex;
     private final ContractDefinitionStore contractDefinitionStore;
