@@ -26,10 +26,15 @@ import org.eclipse.edc.spi.monitor.Monitor;
 import org.eclipse.edc.spi.query.QuerySpec;
 
 import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -41,6 +46,10 @@ public class CatalogUiController {
     private static final String EDC_NS = "https://w3id.org/edc/v0.0.1/ns/";
     private static final DateTimeFormatter UTC_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("UTC"));
     private static final int PREVIEW_MAX_BYTES = 65536;
+    private static final String AIRFLOW_URL = System.getenv().getOrDefault("AIRFLOW_URL", "http://airflow:8080");
+    private static final String AIRFLOW_USER = System.getenv().getOrDefault("AIRFLOW_USER", "airflow");
+    private static final String AIRFLOW_PASSWORD = System.getenv().getOrDefault("AIRFLOW_PASSWORD", "airflow");
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
 
     private final AssetIndex assetIndex;
     private final ContractDefinitionStore contractDefinitionStore;
@@ -371,6 +380,54 @@ public class CatalogUiController {
         } catch (Exception e) {
             monitor.severe("Failed to download asset: " + assetId, e);
             return Response.serverError().entity("Download failed: " + e.getMessage()).build();
+        }
+    }
+
+    @POST
+    @Path("catalog/api/trigger-validation")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response triggerValidation(@jakarta.ws.rs.QueryParam("assetId") String assetId) {
+        try {
+            if (assetId == null || assetId.isBlank()) {
+                return Response.status(400).entity("{\"error\":\"assetId is required\"}").build();
+            }
+
+            String dagId = "hackfest_validate_dataset";
+            String auth = "Basic " + Base64.getEncoder().encodeToString(
+                    (AIRFLOW_USER + ":" + AIRFLOW_PASSWORD).getBytes(StandardCharsets.UTF_8));
+
+            // Airflow pauses every DAG it discovers until someone unpauses it (in
+            // the UI or via this same API) - unpause first so triggering works
+            // even if nobody has opened the Airflow UI for this DAG yet.
+            HttpRequest unpause = HttpRequest.newBuilder()
+                    .uri(URI.create(AIRFLOW_URL + "/api/v2/dags/" + dagId))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", auth)
+                    .method("PATCH", HttpRequest.BodyPublishers.ofString("{\"is_paused\": false}"))
+                    .build();
+            HTTP_CLIENT.send(unpause, HttpResponse.BodyHandlers.discarding());
+
+            ObjectNode conf = MAPPER.createObjectNode();
+            conf.put("asset_id", assetId);
+            ObjectNode body = MAPPER.createObjectNode();
+            body.set("conf", conf);
+
+            HttpRequest trigger = HttpRequest.newBuilder()
+                    .uri(URI.create(AIRFLOW_URL + "/api/v2/dags/" + dagId + "/dagRuns"))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", auth)
+                    .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = HTTP_CLIENT.send(trigger, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return Response.ok(response.body()).build();
+            }
+            monitor.warning("Airflow returned " + response.statusCode() + " triggering " + dagId + ": " + response.body());
+            return Response.status(response.statusCode()).entity(response.body()).build();
+        } catch (Exception e) {
+            monitor.severe("Failed to trigger validation DAG for asset: " + assetId, e);
+            return jsonError(e);
         }
     }
 

@@ -1388,6 +1388,19 @@
         }),
       });
 
+      // Trigger the Airflow validation DAG for this asset (best-effort — a
+      // submission still succeeds even if Airflow is unreachable or slow to
+      // come up; the connector's own /api/trigger-validation proxies to
+      // Airflow's REST API server-side, unpausing hackfest_validate_dataset
+      // first since Airflow pauses newly-discovered DAGs by default).
+      try {
+        await fetch('/api/catalog/api/trigger-validation?assetId=' + encodeURIComponent(assetId), {
+          method: 'POST',
+        });
+      } catch (e) {
+        console.warn('Could not trigger validation DAG:', e);
+      }
+
       // Update the token display
       document.querySelector('.token-box').textContent = assetId;
 
