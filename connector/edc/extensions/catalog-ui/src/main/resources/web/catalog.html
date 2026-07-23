@@ -293,10 +293,10 @@
                 const a = ordered[i].asset;
                 const depth = ordered[i].depth;
                 const parentId = ordered[i].parentId;
-                const derivedFrom = a.metadata && (a.metadata['prov.wasDerivedFrom'] || a.metadata['prov:wasDerivedFrom']);
+                const derivedFrom = derivedSourceId(a);
                 const isDerived = !!derivedFrom;
-                const pipeline = a.metadata && (a.metadata['prov.wasGeneratedBy'] || a.metadata['prov:wasGeneratedBy']);
-                const author = a.metadata && (a.metadata['prov.wasAttributedTo'] || a.metadata['prov:wasAttributedTo']);
+                const pipeline = provTerm(a, 'wasGeneratedBy');
+                const author = provTerm(a, 'wasAttributedTo');
                 const type = a.dataAddress ? a.dataAddress.type : '';
                 const hasMeta = a.metadata && Object.keys(a.metadata).length > 0;
 
@@ -527,6 +527,35 @@
             return html;
         }
 
+        // Extract a PROV term for an asset. Provenance primarily lives inside
+        // the asset's `semantic_description` JSON-LD document (as prov:<local>);
+        // a flat top-level `prov.<local>` / `prov:<local>` property is still
+        // honoured as a fallback for assets registered the older, flat way.
+        function provTerm(a, local) {
+            const md = (a && a.metadata) || {};
+            let v = md['prov.' + local] || md['prov:' + local];
+            if (!v) {
+                const sdRaw = md['semantic_description'];
+                if (sdRaw) {
+                    try {
+                        const sd = typeof sdRaw === 'string' ? JSON.parse(sdRaw) : sdRaw;
+                        v = sd['prov:' + local] || sd['prov.' + local];
+                    } catch (e) { /* not parseable JSON-LD — ignore */ }
+                }
+            }
+            if (Array.isArray(v)) v = v[0];
+            if (v && typeof v === 'object') v = v['@id'] || v['@value'] || null;
+            return (typeof v === 'string' && v) ? v : null;
+        }
+
+        // The source asset id a derived asset points at, normalised to a bare
+        // EDC asset id — the semantic_description references its source dataset
+        // node as "urn:dataset:<id>".
+        function derivedSourceId(a) {
+            const v = provTerm(a, 'wasDerivedFrom');
+            return v ? v.replace(/^urn:dataset:/, '') : null;
+        }
+
         function buildLineageTrees(assets) {
             const byId = {};
             for (const a of assets) {
@@ -535,11 +564,9 @@
 
             const roots = [];
             for (const a of assets) {
-                const parentId = a.metadata && (a.metadata['prov.wasDerivedFrom'] || a.metadata['prov:wasDerivedFrom']);
+                const parentId = derivedSourceId(a);
                 if (parentId && byId[parentId]) {
                     byId[parentId].children.push(byId[a.id]);
-                } else if (!parentId) {
-                    roots.push(byId[a.id]);
                 } else {
                     roots.push(byId[a.id]);
                 }
